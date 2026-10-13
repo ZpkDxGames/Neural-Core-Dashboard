@@ -87,10 +87,20 @@ export default function Page(){
     const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='neural-core-local-export.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   function copyContext(){
-    if(!selected)return;
+    if(!selected || !local)return;
     const c=conversations.find(c=>c.id===selected.id);
-    const context=c?`Context from my conversation "${c.title}" (${c.provider}):\n`+c.messages.slice(0,6).map(m=>`${m.role}: ${m.text.slice(0,1500)}`).join('\n\n'):`Topic: ${selected.label}`;
-    void navigator.clipboard.writeText(context).then(()=>setStatus('Selected context copied. Paste it into ChatGPT, Claude, or Gemini.')).catch(()=>setStatus('Clipboard permission denied.'));
+    let context='';
+    if(c){
+      context='Context from my '+c.provider+' conversation "'+c.title+'":\n'+
+        c.messages.slice(0,6).map(m=>m.role+': '+m.text.slice(0,1500)).join('\n\n');
+    } else if(selected.type==='concept' && selected.evidence?.length){
+      context='These are explicit mentions of "'+selected.label+'" in my AI conversation archives, not verified inferences:\n\n'+
+        selected.evidence.slice(0,6).map(e=>'['+e.provider+' | '+e.title+'] '+e.excerpt).join('\n\n');
+    } else {
+      setStatus('Select an imported conversation or evidence-backed topic to copy context.');
+      return;
+    }
+    void navigator.clipboard.writeText(context).then(()=>setStatus('Evidence-backed context copied. Paste it into ChatGPT, Claude, or Gemini.')).catch(()=>setStatus('Clipboard permission denied.'));
   }
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen?'sidebar-open':''}`}>
@@ -100,7 +110,7 @@ export default function Page(){
       <nav className="nav-items">{nav.slice(0,4).map(n=><button key={n.id} className={`nav-item ${view===n.id?'active':''}`} onClick={()=>{setView(n.id);setMenuOpen(false)}}><n.icon size={17} strokeWidth={1.8}/><span>{n.label}</span>{n.id==='memories'&&local?<em>{total(importedCount)}</em>:null}</button>)}</nav>
       <div className="nav-section-label lower">MANAGEMENT</div>
       <nav className="nav-items">{nav.slice(4).map(n=><button key={n.id} className={`nav-item ${view===n.id?'active':''}`} onClick={()=>{setView(n.id);setMenuOpen(false)}}><n.icon size={17} strokeWidth={1.8}/><span>{n.label}</span></button>)}</nav>
-      <div className="sidebar-bottom"><div className="sidebar-info"><div className="mini-icon"><LockKeyhole size={15}/></div><div><strong>Local-first mode</strong><small>Browser storage only</small></div><ShieldCheck size={15} className="dim"/></div><div className="sidebar-footer"><span>NEURAL CORE</span><span>v0.1.0 · Alpha</span></div></div>
+      <div className="sidebar-bottom"><div className="sidebar-info"><div className="mini-icon"><LockKeyhole size={15}/></div><div><strong>Local-first mode</strong><small>Browser storage only</small></div><ShieldCheck size={15} className="dim"/></div><div className="sidebar-footer"><span>NEURAL CORE</span><span>v0.1.0 · Alpha.2</span></div></div>
     </aside>
     <main className="main">
       <header className="topbar"><div className="top-left"><button className="mobile-menu icon-button" onClick={()=>setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={18}/></button><span>Workspace</span><ChevronRight size={14}/><strong>{title}</strong></div><div className="top-actions"><span className="private-indicator"><span className="dot green"/> Local-only · no sync</span><button className="avatar" title="Local workspace">NC</button></div></header>
@@ -111,9 +121,9 @@ export default function Page(){
         {view==='overview'||view==='network'?<>
           <div className="summary-cards">
             <div className="metric-card"><div className="metric-head"><span>KNOWLEDGE NODES</span><Network size={16}/></div><div className="metric-value">{total(displayedGraph.nodes.length)}<span>nodes</span></div><div className="metric-meta">{local?'Extracted from local archive':'Illustrative neural dataset'}</div></div>
-            <div className="metric-card"><div className="metric-head"><span>RELATIONSHIPS</span><GitBranch size={16}/></div><div className="metric-value">{total(displayedGraph.edges.length)}<span>edges</span></div><div className="metric-meta">{local?'Source and category links':'Simulated relationships'}</div></div>
+            <div className="metric-card"><div className="metric-head"><span>RELATIONSHIPS</span><GitBranch size={16}/></div><div className="metric-value">{total(displayedGraph.edges.length)}<span>edges</span></div><div className="metric-meta">{local?'Source, category and cited topic links':'Simulated relationships'}</div></div>
             <div className="metric-card"><div className="metric-head"><span>CONVERSATIONS</span><Database size={16}/></div><div className="metric-value">{local?total(importedCount):'0'}<span>saved</span></div><div className="metric-meta">{local?'Stored in this browser':'No personal content imported'}</div></div>
-            <div className="metric-card"><div className="metric-head"><span>DATA SOURCES</span><Activity size={16}/></div><div className="metric-value">{local?total(['chatgpt','claude','gemini','generic'].filter(p=>srcCount(p as Provider)>0).length):'0'}<span>connected</span></div><div className="metric-meta">Manual archive import · no sync</div></div>
+            <div className="metric-card"><div className="metric-head"><span>DATA SOURCES</span><Activity size={16}/></div><div className="metric-value">{local?total(['chatgpt','claude','gemini','generic'].filter(p=>srcCount(p as Provider)>0).length):'0'}<span>imported</span></div><div className="metric-meta">Manual archive import · no sync</div></div>
           </div>
           <section className="visual-grid">
             <div className="sphere-panel">
@@ -122,7 +132,7 @@ export default function Page(){
               <div className="sphere-stage"><div className="stage-glow"/><div className="stage-corner top-l"><span className="dot aqua"/> {local?'LOCAL GRAPH RENDER':'SYNTHETIC GRAPH PREVIEW'}</div><div className="stage-axis">DRAG TO ROTATE <span>·</span> SCROLL TO ZOOM <span>·</span> SELECT A NODE</div>{initialized&&<NeuralSphere graph={displayedGraph} playing={playing} onSelect={setSelected}/>}<div className="stage-bottom"><div className="stage-pill"><span className="dot aqua"/> {displayedGraph.nodes.length} nodes rendered</div><span>3D NETWORK · WEBGL</span></div></div>
               <div className="sphere-footer"><div><span className="footer-point"/> Neural Core <span className="sep">/</span> {local?'Imported knowledge':'Synthetic sample'}</div><span>{displayedGraph.edges.length} relationships visualized</span></div>
             </div>
-            <div className="right-panels"><div className="details-card"><div className="section-kicker">SELECTED MEMORY</div>{selected?<><div className="detail-icon"><BrainCircuit size={18}/></div><h3>{selected.label}</h3><p>{selected.description||`Knowledge group: ${selected.category}`}</p><div className="detail-row"><span>Category</span><strong>{selected.category}</strong></div><div className="detail-row"><span>Node type</span><strong>{selected.type}</strong></div>{selected.provider&&<div className="detail-row"><span>Source</span><strong>{selected.provider}</strong></div>}<button className="light-button" onClick={copyContext}>Copy context <ArrowRight size={15}/></button></>:<><div className="detail-placeholder"><div className="detail-icon"><CircleHelp size={20}/></div><h3>Explore the network</h3><p>Select a glowing node to inspect its origin, category and relationships.</p></div></>}</div>
+            <div className="right-panels"><div className="details-card"><div className="section-kicker">SELECTED MEMORY</div>{selected?<><div className="detail-icon"><BrainCircuit size={18}/></div><h3>{selected.label}</h3><p>{selected.description||`Knowledge group: ${selected.category}`}</p><div className="detail-row"><span>Category</span><strong>{selected.category}</strong></div><div className="detail-row"><span>Node type</span><strong>{selected.type}</strong></div>{selected.provider&&<div className="detail-row"><span>Source</span><strong>{selected.provider}</strong></div>}<>{selected.evidence?.length ? <div className="evidence-preview"><strong>Source evidence · literal mentions</strong>{selected.evidence.slice(0,3).map((e,i)=><div className="evidence-item" key={e.conversationId+":"+e.messageId+":"+i}><span>{e.provider} · {e.title}</span><p>{e.excerpt}</p></div>)}</div> : null}<button className="light-button" disabled={!local || (selected.type!=="conversation" && !selected.evidence?.length)} onClick={copyContext}>Copy cited context <ArrowRight size={15}/></button></></>:<><div className="detail-placeholder"><div className="detail-icon"><CircleHelp size={20}/></div><h3>Explore the network</h3><p>Select a glowing node to inspect its origin, category and relationships.</p></div></>}</div>
               <div className="category-card"><div className="card-header"><div><div className="section-kicker">ORGANIZATION</div><h3>Knowledge clusters</h3></div><span className="chip">{CATEGORIES.length}</span></div><div className="category-list">{distribution.map(c=><button key={c.name} className="category-row" onClick={()=>{setCategory(c.name);setView('network');}}><span className="color-bullet" style={{background:c.color}}/><span>{c.name}</span><strong>{c.value}</strong></button>)}</div></div></div>
           </section>
           {!local&&<div className="demo-banner"><div className="demo-banner-icon"><Sparkles size={17}/></div><div><strong>You're viewing a synthetic network.</strong><p>These nodes are illustrative—not inferred memories or personality traits. Import an archive to visualize your real conversation structure.</p></div><button onClick={()=>fileInput.current?.click()}>Import your data <ArrowRight size={14}/></button></div>}
