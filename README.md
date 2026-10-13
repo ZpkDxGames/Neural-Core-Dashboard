@@ -77,7 +77,7 @@ Vercel Functions are ephemeral; no permanent file storage should be assumed. The
 
 ## Validation status
 
-Parser/graph unit tests can run with Node.js built-in test runner. The initial ZIP was authored in an environment without npm registry access; **a full `next build` and browser certification must be run after dependency installation**. See `docs/BUILD_STATUS.md`.
+**GitHub Actions passed** dependency installation, 6 unit tests, TypeScript typechecking and `next build` on Node 22 (verification run #38408249711, 2026-10-13). Interactive browser/WebGL certification and real synchronization remain pending. See `docs/BUILD_STATUS.md`.
 
 ## Repository policy
 
