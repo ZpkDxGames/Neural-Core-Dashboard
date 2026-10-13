@@ -20,5 +20,7 @@ jobs:
       # Alpha bootstrap has no lock file yet; generate and commit one before release.
       - run: npm install --no-audit --no-fund
       - run: npm test
+      - run: node --test backend/core-server.test.mjs
+      - run: node --check backend/server.mjs
       - run: npm run typecheck
       - run: npm run build
