@@ -1,0 +1,47 @@
+[Unit]
+Description=Neural Core private localhost-only canary API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=neuralcore_api
+Group=neuralcore_api
+WorkingDirectory=/opt/neural-core-api
+Environment=NODE_ENV=production
+Environment=NCORE_BIND=127.0.0.1
+Environment=NCORE_PORT=4765
+Environment=PGHOST=/var/run/postgresql
+Environment=PGPORT=5432
+Environment=PGUSER=neuralcore_api
+Environment=PGDATABASE=neuralcore
+Environment=NCORE_TOKEN_FILE=/etc/neural-core/api.token
+ExecStart=/usr/bin/node --max-old-space-size=128 /opt/neural-core-api/server.mjs
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+Slice=neural-core.slice
+CPUAccounting=yes
+MemoryAccounting=yes
+CPUWeight=10
+IOWeight=20
+MemoryHigh=256M
+MemoryMax=320M
+TasksMax=64
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+CapabilityBoundingSet=
+LockPersonality=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
