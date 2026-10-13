@@ -41,6 +41,44 @@ Record the emitted `age1...` recipient, which is public. Keep the
 recovery copy, **never in GitHub, Vercel, the API, screenshots or chat**.
 Without this private identity you cannot recover any encrypted backups.
 
+## Windows 11: secure and test an AGE identity
+
+Use Windows PowerShell on the trusted PC, **not** on Oracle. The `age`
+CLI can emit `warning: writing secret key to a world-readable file` on
+Windows. Treat this as a real permission warning and inspect the private file's
+ACL before sending encrypted archives to this key.
+
+```powershell
+$key = "$env:USERPROFILE\NeuralCore-Recovery\neuralcore-recovery-identity.txt"
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+
+# Explicit current-user rule first, then remove inherited access.
+icacls.exe $key /grant:r "*${sid}:(F)"
+icacls.exe $key /inheritance:r
+icacls.exe $key
+```
+
+Inspect the ACL output: stop if it grants access to unexpected users or
+broad principals such as `Everyone`, `Users`, or `Authenticated Users`.
+Do not send, screenshot or log the **secret contents**. Windows ACLs and
+group policies vary; where in doubt, check the displayed effective permissions
+before treating the key as protected. Keep a second securely stored recovery
+identity copy on a separate trusted medium.
+
+One-time **non-sensitive** end-to-end local encryption and decryption test:
+
+```powershell
+Set-Location "$env:USERPROFILE\NeuralCore-Recovery"
+$recipient = age-keygen -y .\neuralcore-recovery-identity.txt
+"Neural Core recovery test" | age -r $recipient -o "$env:TEMP\neural-core-age-test.age"
+age -d -i .\neuralcore-recovery-identity.txt "$env:TEMP\neural-core-age-test.age"
+Remove-Item "$env:TEMP\neural-core-age-test.age"
+```
+
+The decrypted output should contain `Neural Core recovery test`. This only
+checks that the identity decrypts a sample message; it does not certify a
+PostgreSQL database restore.
+
 ## 2 — Stop and review installation before any VPS modification
 
 Confirm `age`, source checkout, live PostgreSQL unit, backups directory, and
