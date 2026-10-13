@@ -1,4 +1,7 @@
 [Unit]
+# Avoid unbounded restart storms on misconfiguration (observed 499 CHDIR retries).
+StartLimitIntervalSec=120
+StartLimitBurst=4
 Description=Neural Core private localhost-only canary API
 After=network.target postgresql.service
 Wants=postgresql.service
