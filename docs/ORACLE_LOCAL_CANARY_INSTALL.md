@@ -115,12 +115,23 @@ Expected final output: `1`. If peer authentication fails, **do not** weaken `pg_
 Confirm again that `/usr/bin/node` is Node 22+. Install only the small isolated backend rather than the Next.js dashboard.
 
 ```bash
+STAGING="$(mktemp -d /tmp/neural-core-api.XXXXXXXX)"
+trap 'rm -rf "$STAGING"' EXIT
+cp backend/package.json backend/core-server.mjs backend/server.mjs \
+  backend/core-server.test.mjs "$STAGING/"
+npm --prefix "$STAGING" install --omit=dev --ignore-scripts --no-audit --no-fund
+node --test "$STAGING/core-server.test.mjs"
+
 sudo install -d -m 0755 /opt/neural-core-api
-sudo install -m 0644 backend/package.json /opt/neural-core-api/package.json
-sudo install -m 0644 backend/core-server.mjs /opt/neural-core-api/core-server.mjs
-sudo install -m 0644 backend/server.mjs /opt/neural-core-api/server.mjs
-sudo npm --prefix /opt/neural-core-api install --omit=dev --no-audit --no-fund
+sudo cp -a "$STAGING/." /opt/neural-core-api/
 sudo chown -R root:root /opt/neural-core-api
+
+# CRITICAL: mktemp creates a 0700 staging directory; cp -a can propagate 0700
+# onto the *destination directory* despite install -d having set 0755 earlier.
+# Fix only the service-code directory. Do not alter token directory permissions.
+sudo chmod 0755 /opt/neural-core-api
+sudo -u neuralcore_api sh -c \
+  'cd /opt/neural-core-api && /usr/bin/node --check server.mjs'
 sudo install -d -o root -g neuralcore_api -m 0750 /etc/neural-core
 sudo sh -c 'umask 027; openssl rand -hex 48 > /etc/neural-core/api.token'
 sudo chown root:neuralcore_api /etc/neural-core/api.token
@@ -128,10 +139,32 @@ sudo chmod 0640 /etc/neural-core/api.token
 sudo install -m 0644 ops/systemd/neural-core-api.service \
   /etc/systemd/system/neural-core-api.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now neural-core-api.service
+sudo systemctl start neural-core-api.service
 ```
 
 Do not print, paste, log, commit or upload `/etc/neural-core/api.token`; it is a private secret. The canary source pins the direct `pg` version, but a committed lockfile is still required before expanding from canary to production synchronization.
+
+## Recovery: systemd 200/CHDIR from staged installation
+
+If `journalctl -u neural-core-api.service` reports `status=200/CHDIR` and
+`Changing to the requested working directory failed: Permission denied`,
+**stop the restart loop** rather than changing security sandbox settings:
+
+```bash
+sudo systemctl stop neural-core-api.service
+namei -l /opt/neural-core-api
+sudo stat -c '%a %U:%G %n' /opt /opt/neural-core-api
+sudo chmod 0755 /opt/neural-core-api
+sudo -u neuralcore_api sh -c \
+  'cd /opt/neural-core-api && /usr/bin/node --check server.mjs'
+sudo systemctl reset-failed neural-core-api.service
+sudo systemctl start neural-core-api.service
+```
+
+Confirm the observed cause before applying the `chmod` and **stop if the
+service-user check still fails**. Never use `chmod -R 777`, widen
+`/etc/neural-core` or disable `ProtectSystem`/`ProtectHome` as a shortcut.
+The token file remains private, root-owned and group-readable only.
 
 ## F. Verify both cgroup membership and HTTP behavior
 
