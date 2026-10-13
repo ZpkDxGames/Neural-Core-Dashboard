@@ -44,18 +44,16 @@ git clone --depth 1 --branch ops/private-core-local-canary \
 cd /tmp/neural-core-canary
 node --test backend/core-server.test.mjs
 node --check backend/server.mjs
-bash -n ops/audit-vps-capacity.sh 2>/dev/null || true
 ```
 
-The final command is optional: `ops/audit-vps-capacity.sh` belongs to the separate preparation PR, not this canary branch. It is **not required** for installation.
 
 ## C. Install PostgreSQL during a quiet server period
 
-First verify again that no PostgreSQL database is used by another application. This creates a new OS package-managed service and may briefly start the default cluster **before** its resource limits are applied; the server has adequate measured headroom but this is not zero-risk. Don't interrupt an in-progress Minecraft world backup.
+First verify again that no PostgreSQL database is used by another application. Use the list-only service-restart mode (`NEEDRESTART_MODE=l`) to avoid automatically restarting unrelated daemons; review any prompts and decline restarts of Minecraft, PlexonPanel and Caddy. This creates a new OS package-managed service and may briefly start the default cluster **before** its resource limits are applied; the server has adequate measured headroom but this is not zero-risk. Don't interrupt an in-progress Minecraft world backup.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y postgresql
+sudo env NEEDRESTART_MODE=l apt-get install -y postgresql
 pg_lsclusters
 ```
 
