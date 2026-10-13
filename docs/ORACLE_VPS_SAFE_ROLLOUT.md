@@ -40,6 +40,25 @@ Minimum acceptance considerations before any install:
 
 These are operational gates, not guarantees of performance.
 
+## Read-only pre-install service and socket check (2026-10-13)
+
+The owner supplied a running-unit inventory showing:
+- `minecraft@tonimsmp.service` **running**.
+- `plexonpanel-host@plexoncraft.service` and `plexonpanel-host@tonimsmp.service` **running**.
+- `plexonpanel-relay.service`, `caddy.service`, and several PlexonPanel read/journal authorities **running**.
+- `minecraft@plexoncraft.service` **not listed among running units**. It may be stopped, failed or intentionally disabled; do not infer it was removed.
+- No PostgreSQL service **in the running-unit list**. This does not establish whether PostgreSQL is installed or stopped.
+- Earlier owner's snapshot: ~19 GiB MemAvailable, load average 0.25/0.23/0.14, ~117 GB available disk, and no swap.
+
+**Next required action:** run the following exact read-only check. Do not modify any existing Caddy/Minecraft/PlexonPanel unit.
+```bash
+# From a clone of the public application repository:
+git fetch origin ops/oracle-vps-capacity-gate
+git switch --detach origin/ops/oracle-vps-capacity-gate
+bash ops/check-vps-service-layout.sh
+```
+This prints the actual state of both Minecraft units, PostgreSQL clusters, existing TCP listening addresses, and pressure metrics. Never place credentials in reports. Review its output before selecting PostgreSQL instance paths or an API listener port. No need to install or start anything to perform this check.
+
 ## Gate 1: isolated service design (NOT active)
 
 - Deploy a dedicated PostgreSQL cluster and a dedicated ingestion API under `neural-core.slice`, not the existing PlexonPanel or Minecraft units.
