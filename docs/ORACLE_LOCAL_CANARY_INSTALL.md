@@ -173,10 +173,28 @@ systemctl is-active neural-core-api.service "$PG_UNIT"
 systemctl show neural-core-api.service -p Slice -p MemoryMax -p MemoryCurrent
 systemctl show "$PG_UNIT" -p Slice -p MemoryMax -p MemoryCurrent
 systemctl show neural-core.slice -p CPUQuotaPerSecUSec -p MemoryMax -p MemoryCurrent
-curl --fail --silent --show-error http://127.0.0.1:4765/healthz
-curl --silent -o /dev/null -w "unauthorized readiness HTTP %{http_code}\n" \
+# Type=simple reports active once Node starts, not once Node has bound its socket.
+# A brief ECONNREFUSED immediately after start can be a startup race.
+sudo ss -ltnp '( sport = :4765 )'
+curl --noproxy '*' --retry 5 --retry-connrefused --retry-delay 1 \
+  --max-time 5 --fail --silent --show-error http://127.0.0.1:4765/healthz
+curl --noproxy '*' --silent -o /dev/null \
+  -w "unauthorized readiness HTTP %{http_code}\n" \
   http://127.0.0.1:4765/readyz
 ```
+
+
+If `/healthz` fails after the retry window but `systemctl is-active` prints
+`active`, do not infer that the API is healthy. Inspect the live socket and
+the main PID rather than modifying database or token permissions:
+
+```bash
+sudo ss -ltnp '( sport = :4765 )'
+systemctl show neural-core-api.service -p MainPID -p NRestarts -p ActiveState -p SubState -p Result
+sudo journalctl -u neural-core-api.service -n 30 --no-pager -o short-iso
+```
+
+Avoid logging secrets; do not rerun installation or regenerate the token.
 
 Expected unauthorized readiness is **HTTP 401**. To verify authorized readiness, read the secret directly in a temporary root-run Node process; this does **not** place it in curl argv, shell history, or logs:
 
