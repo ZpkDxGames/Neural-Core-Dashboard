@@ -22,4 +22,5 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: bash -n ops/audit-vps-capacity.sh
+      - run: bash -n ops/check-vps-service-layout.sh
       - run: npm run build
