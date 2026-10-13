@@ -1,4 +1,4 @@
-# Neural Core · Foundation Alpha (v0.1.0)
+# Neural Core · Foundation Alpha (v0.1.0-alpha.2)
 
 Independent, local-first personal knowledge network for ChatGPT, Claude and Gemini conversation archives. Designed for a free Vercel dashboard and an optional private PostgreSQL backend on an existing VPS.
 
@@ -10,6 +10,7 @@ Independent, local-first personal knowledge network for ChatGPT, Claude and Gemi
 - Local JSON file import and IndexedDB persistence; no uploads when using the dashboard's Import button.
 - ChatGPT `conversations.json` parser using active conversation branches; Claude `chats.json` parser; normalized generic conversation JSON (including normalized Gemini conversations).
 - Conversation library, basic topic categorization, counts, summary and context-copy functionality.
+- **Evidence-linked topic hubs**: recognized literal topics can connect conversations across providers. Each hub links back to the source conversation, message ID (if available), and an exact, bounded excerpt. This is deterministic matching, NOT personality inference or full semantic understanding.
 - Import/export/delete controls with opt-in local storage.
 - Optional *server-to-server* `/api/v1/ingest` route with a Bearer token and PostgreSQL schema; disabled unless both environment variables are configured.
 - Unit tests for archive parsing and graph integrity.
@@ -20,7 +21,7 @@ Independent, local-first personal knowledge network for ChatGPT, Claude and Gemi
 - **No Gemini Takeout parser**; no claim that Gemini exports contain complete conversations.
 - **No automatic shared brain/context injection across the AI sites**.
 - The local dashboard does not query PostgreSQL. The optional ingest API writes to the private database, but a full authenticated read API and owner login are pending.
-- No embeddings/LLM summaries, personality inference, background jobs or semantic search yet. Categories are rule-based heuristics, not psychological traits.
+- No embeddings/LLM summaries, personality inference, background jobs or semantic search yet. The topic vocabulary is finite and may miss synonyms or mentions beyond the sampled messages. Categories are rule-based heuristics, not psychological traits.
 - Demo graph nodes **are simulated** and never pretend to be real memories.
 
 ## Run locally

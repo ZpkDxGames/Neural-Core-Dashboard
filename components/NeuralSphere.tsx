@@ -41,6 +41,10 @@ function makeBuffers(graph: KnowledgeGraph) {
     else if(node.type==='provider'){
       const idx=['chatgpt','claude','gemini','generic'].indexOf(node.provider||'');
       p=fibonacci(Math.max(0,idx),4).multiplyScalar(1.85);
+    } else if (node.type === 'concept') {
+      const axis = directions.get(node.category) || fibonacci(4, 8);
+      const offset = new Vector3(random(node.id + 'x') - .5, random(node.id + 'y') - .5, random(node.id + 'z') - .5).multiplyScalar(.78);
+      p = axis.clone().multiplyScalar(2.06).add(offset);
     } else {
       const base=(directions.get(node.category)||fibonacci(4,8)).clone().multiplyScalar(0.79);
       const j=new Vector3(random(node.id+'x')-.5,random(node.id+'y')-.5,random(node.id+'z')-.5).multiplyScalar(1.65);
