@@ -22,5 +22,6 @@ jobs:
       - run: npm test
       - run: node --test backend/core-server.test.mjs
       - run: node --check backend/server.mjs
+      - run: bash -n ops/backup/neural-core-backup.sh
       - run: npm run typecheck
       - run: npm run build
