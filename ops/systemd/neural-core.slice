@@ -1,0 +1,17 @@
+# Neural Core cgroup resource envelope (TEMPLATE, NOT INSTALLED).
+# Place *both* the dedicated PostgreSQL instance and API unit in Slice=neural-core.slice.
+# These settings do not constrain an ordinary system PostgreSQL instance outside this slice.
+[Unit]
+Description=Neural Core shared CPU/RAM budget
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+IOAccounting=yes
+TasksAccounting=yes
+CPUQuota=50%
+CPUWeight=10
+MemoryHigh=768M
+MemoryMax=1G
+IOWeight=20
+TasksMax=256
