@@ -262,44 +262,137 @@ Only then, during idle Minecraft activity, trigger **one** manual
 `sudo systemctl start neural-core-backup.service` and inspect the resulting
 journal/checksum. If it fails again, stop instead of widening capabilities.
 
-## 4 — Restore into an isolated test database, not production
+## 4 — Certify Windows-based recovery into an isolated database
 
-Move only the encrypted `.dump.age` and matching `.sha256` files to a
-trusted workstation with the private AGE identity. Verify their checksum
-locally. Prepare an empty disposable `neuralcore_restore_check` database
-on the VPS, **stopping if it already exists**:
+**First successful encrypted archive:** on 2026-10-14, the manual backup unit
+returned `Result=success`, `ExecMainStatus=0` and created
+`neuralcore-20261014T005101Z-1932323.dump.age` (11,197 encrypted bytes).
+Its SHA-256 checksum passed on Oracle. **Full disaster recovery is not yet
+certified**, pending restoration.
 
-```bash
-sudo -u postgres psql -Atqc \
-  "SELECT 1 FROM pg_database WHERE datname='neuralcore_restore_check';"
-# Only if the query emitted NO ROWS:
-sudo -u postgres createdb -O postgres neuralcore_restore_check
-```
+### A. Stage ciphertext for download, never the decryption key
 
-On a trusted Linux/macOS/WSL shell where `age`, the encrypted dump and
-private identity reside, decrypt **in memory only** and transfer the plaintext
-stream over authenticated SSH into the disposable database:
+On the VPS, create a private staging directory under the SSH account's
+home. Only copy the two *encrypted* files; do not modify originals under
+`/var/backups/neural-core`.
 
 ```bash
-set -o pipefail
-age -d -i ./neuralcore-recovery-identity.txt ./neuralcore-BACKUP.dump.age \
-  | ssh -T ubuntu@YOUR_VPS_HOST \
-    'sudo -n -u postgres pg_restore --exit-on-error --no-owner --no-acl \
-      --dbname=neuralcore_restore_check'
+archive=neuralcore-20261014T005101Z-1932323.dump.age
+install -d -m 0700 "$HOME/neural-core-transfer"
+sudo install -o ubuntu -g ubuntu -m 0600 \
+  "/var/backups/neural-core/$archive" "$HOME/neural-core-transfer/$archive"
+sudo install -o ubuntu -g ubuntu -m 0600 \
+  "/var/backups/neural-core/$archive.sha256" "$HOME/neural-core-transfer/$archive.sha256"
+(cd "$HOME/neural-core-transfer" && sha256sum -c -- "$archive.sha256")
 ```
 
-This requires passwordless `sudo -n -u postgres` on the authorized SSH
-account; if not available, **stop and use an approved alternative** rather
-than placing the private identity on the VPS. TLS or plain TCP PostgreSQL
-access is never needed. The unencrypted stream lives only inside the SSH
-channel and processes, not as a disk file.
+Before using these commands for a different server, confirm the SSH account
+is actually `ubuntu` and adapt the ownership and `/home/ubuntu` paths
+accordingly. Restrictive staging-file permissions do not replace SSH security.
+Clean up the staging copies only **after** a successful recovery test.
 
-Validate schema/table counts and (after real data exists) record counts and
-a representative query against the **test database**. Never restore into
-`neuralcore`, overwrite it or change the running API.
+### B. Download ciphertext on Windows PowerShell
 
-Keep the disposable test database until inspection is complete; cleanup is
-a separate manual, explicitly reviewed action.
+On the same Windows PC that holds the private AGE identity:
+
+```powershell
+$archive = 'neuralcore-20261014T005101Z-1932323.dump.age'
+$remote = 'ubuntu@YOUR_VPS_SSH_HOST'
+$dir = Join-Path $env:USERPROFILE 'NeuralCore-Recovery'
+scp "\${remote}:/home/ubuntu/neural-core-transfer/$archive" $dir
+scp "\${remote}:/home/ubuntu/neural-core-transfer/$archive.sha256" $dir
+
+$checksumLine = (Get-Content -LiteralPath (Join-Path $dir "$archive.sha256") -Raw).Trim()
+$expected = ($checksumLine -split '\s+', 2)[0].ToUpperInvariant()
+$actual = (Get-FileHash -LiteralPath (Join-Path $dir $archive) -Algorithm SHA256).Hash
+if ($expected -ne $actual) { throw 'STOP: encrypted archive checksum mismatch' }
+'PASS: encrypted archive SHA-256 matches'
+```
+
+Replace only the SSH host placeholder, using the host/address you normally
+connect to with your SSH keys. The **private key file itself is never copied
+to Oracle**.
+
+### C. Prepare a strictly separate test database
+
+On Oracle, verify the existing production database remains healthy, and
+verify the test database **does not exist** before creating it:
+
+```bash
+sudo -u postgres psql -d postgres -Atqc \
+  "SELECT datname FROM pg_database WHERE datname IN ('neuralcore', 'neuralcore_restore_check');"
+```
+
+The expected initial output contains only `neuralcore`.
+**Stop if `neuralcore_restore_check` already exists**; do not drop or
+overwrite any database. After reviewing that output, create the isolated
+empty database and revoke the default PUBLIC connection privilege:
+
+```bash
+sudo -u postgres createdb --owner=postgres neuralcore_restore_check
+sudo -u postgres psql -d postgres -c \
+  'REVOKE CONNECT ON DATABASE neuralcore_restore_check FROM PUBLIC;'
+```
+
+From Windows PowerShell, confirm your configured SSH connection can
+execute noninteractive PostgreSQL commands **before streaming data**:
+
+```powershell
+ssh -T ubuntu@YOUR_VPS_SSH_HOST 'sudo -n -u postgres psql -d postgres -Atqc "SELECT current_user"'
+```
+
+Expected `postgres`. If sudo refuses noninteractive operation, **stop** and
+request a reviewed restore method; never upload the private AGE identity.
+
+### D. Windows binary-safe restore (Command Prompt, not Windows PowerShell pipe)
+
+**Do not pipe decrypted `age` output through Windows PowerShell 5.1:**
+its text-oriented native pipeline can corrupt binary PostgreSQL dumps.
+Instead, open **Command Prompt (`cmd.exe`)** in Windows. Standard Windows
+native-command pipes preserve binary streams.
+
+First test decryption and dump parsing without modifying any database:
+
+```bat
+cd /d C:\Users\Tonim\NeuralCore-Recovery
+age -d -i neuralcore-recovery-identity.txt neuralcore-20261014T005101Z-1932323.dump.age | ssh -T ubuntu@YOUR_VPS_SSH_HOST "sudo -n -u postgres pg_restore --list"
+```
+
+If parsing succeeds and prints the PostgreSQL custom-format archive's
+table-of-contents entries, perform the actual restore **to the test database
+only**:
+
+```bat
+age -d -i neuralcore-recovery-identity.txt neuralcore-20261014T005101Z-1932323.dump.age | ssh -T ubuntu@YOUR_VPS_SSH_HOST "sudo -n -u postgres pg_restore --exit-on-error --single-transaction --no-owner --no-acl --dbname=neuralcore_restore_check"
+echo restore-exit-code=%ERRORLEVEL%
+```
+
+Expect `restore-exit-code=0`. The stream is decrypted locally and sent over
+authenticated SSH without writing a plaintext dump archive on either disk.
+The restored test database of course stores the recovered records on PostgreSQL
+storage; test access is limited by the connection privilege revocation.
+
+If an error occurs, **do not pipe into production** or retry blindly. Preserve
+the isolated test DB for investigation. A successful restore is followed by a
+schema count and sample row query, compared against the source database:
+
+```bash
+for db in neuralcore neuralcore_restore_check; do
+  printf '%s: ' "$db"
+  sudo -u postgres psql -d "$db" -Atqc \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';"
+done
+```
+
+Both should report six base tables for the current initial schema. Later,
+validate representative record counts and the backup's temporal consistency
+when imported conversation data exists. Do **not** claim full disaster
+recovery based on a schema-only restoration: PostgreSQL role/global
+configuration, retention, offsite copies and recovery time also need
+verification.
+
+Keep the test database until inspection is complete; cleanup remains
+manual and separately reviewed.
 
 ## 5 — Stop criteria and monitoring
 
