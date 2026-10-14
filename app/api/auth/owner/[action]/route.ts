@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { loadOwnerController } from '../../../../../lib/auth/owner-runtime';
-import { noStore } from '../../../../../lib/auth/owner-core';
+import { noStore, OwnerConfigError } from '../../../../../lib/auth/owner-core';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -29,8 +29,10 @@ async function dispatch(req:NextRequest,context:{params:Promise<{action:string}>
       case 'rotate': return controller.rotate(req);
       default: return json(404,'NOT_FOUND');
     }
-  } catch {
-    // Do not leak environment, provider/Redis errors or identity.
+  } catch (error) {
+    // Server logs receive only a predefined diagnostic identifier, never values, user
+    // identity, tokens, stack traces or the exception message. Public response is generic.
+    console.error('[neural-core/owner-auth]', error instanceof OwnerConfigError ? error.code : 'AUTH_RUNTIME_UNAVAILABLE');
     return json(503,'AUTH_UNAVAILABLE');
   }
 }
