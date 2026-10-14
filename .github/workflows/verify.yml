@@ -51,6 +51,18 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -f db/001_init.sql
       - run: npm test
       - run: node --test backend/*.test.mjs
+      - name: Synthetic PostgreSQL backup and isolated restore round trip (no AGE keys)
+        run: |
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title,owner_id,content_hash) VALUES('chatgpt:synthetic-restore','chatgpt','Synthetic restore fixture','owner',repeat('a',64));"
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -c "INSERT INTO messages(conversation_id,message_id,role,body) VALUES('chatgpt:synthetic-restore','m1','user','Synthetic backup fixture only');"
+          pg_dump -h 127.0.0.1 -U postgres -d ncore_phase1b_test -Fc -f /tmp/ncore-synthetic.dump
+          sha256sum /tmp/ncore-synthetic.dump > /tmp/ncore-synthetic.sha256
+          sha256sum -c /tmp/ncore-synthetic.sha256
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase1b_restore_test OWNER postgres;"
+          pg_restore -h 127.0.0.1 -U postgres -d ncore_phase1b_restore_test --exit-on-error --single-transaction --no-owner --no-acl /tmp/ncore-synthetic.dump
+          test "$(psql -h 127.0.0.1 -U postgres -d ncore_phase1b_restore_test -Atc "SELECT count(*) FROM messages WHERE body='Synthetic backup fixture only'")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d ncore_phase1b_restore_test -Atc "SELECT count(*) FROM pg_constraint WHERE conname='memory_evidence_real_message_fk' AND convalidated")" = "1"
+          rm -f /tmp/ncore-synthetic.dump /tmp/ncore-synthetic.sha256
       - run: node --check backend/server.mjs && node --check backend/migrate.mjs && node --check backend/memory-api.mjs && node --check backend/memory-store.mjs
       - run: bash -n ops/backup/neural-core-backup.sh
       - name: Verify restricted encrypted backup contract
