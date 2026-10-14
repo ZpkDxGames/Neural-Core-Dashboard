@@ -36,7 +36,12 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
+# Keep only the identity-switch capabilities effective across the shell script
+# exec chain, so setpriv can drop from root to postgres without invoking PAM.
+# BoundingSet alone limits permissions but does not propagate effective caps
+# through execve() under NoNewPrivileges=yes.
 CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
 LockPersonality=yes
 
 # Intentionally no [Install] section: this backup is not scheduled or enabled.
