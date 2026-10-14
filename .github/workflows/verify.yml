@@ -31,19 +31,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      # TODO: replace npm install with npm ci when the lockfiles have been generated and reviewed.
-      - run: npm install --no-audit --no-fund
-      - name: Generate deterministic dependency lockfiles for review
-        run: |
-          npm install --package-lock-only --ignore-scripts --prefix backend --no-audit --no-fund
-          node - <<'LOCK_OUTPUT'
-          const fs=require('node:fs');
-          for(const [label,path] of [['ROOT','package-lock.json'],['BACKEND','backend/package-lock.json']]){
-            const data=fs.readFileSync(path,'utf8');
-            for(let i=0,j=0;i<data.length;i+=900,j++)console.log('LOCK_'+label+'_'+j+'='+JSON.stringify(data.slice(i,i+900)));
-            console.log('LOCK_'+label+'_END='+Math.ceil(data.length/900));
-          }
-          LOCK_OUTPUT
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --prefix backend --no-audit --no-fund
       - name: Prepare isolated synthetic PostgreSQL
         run: |
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE neuralcore_api LOGIN PASSWORD 'synthetic-ci-role';"
