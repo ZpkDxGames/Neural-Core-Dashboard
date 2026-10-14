@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ownerController,readOwnerConfig,ownerAllowed,SESSION_COOKIE,FLOW_COOKIE,
+  ownerController,readOwnerConfig,OwnerConfigError,ownerAllowed,SESSION_COOKIE,FLOW_COOKIE,
   csrfToken,parsedCookie,exactOrigin
 } from '../lib/auth/owner-core.ts';
 
@@ -153,4 +153,30 @@ test('Origin and Fetch-Site are both mandatory for state mutation',()=>{
   assert.equal(csrfToken(config.csrfSecret,'x'),csrfToken(config.csrfSecret,'x'));
   assert.notEqual(csrfToken(config.csrfSecret,'x'),csrfToken(config.csrfSecret,'y'));
   assert.equal(parsedCookie(request(origin+'/','GET',{cookie:'hello=abc'}),SESSION_COOKIE),null);
+});
+
+test('invalid Preview auth variables produce stable log-safe error codes without values',()=>{
+  const env={
+    NCORE_OWNER_AUTH_ENABLED:'1',
+    NCORE_OWNER_AUTH_ORIGIN:origin,
+    NCORE_GOOGLE_CLIENT_ID:config.clientId,
+    NCORE_GOOGLE_CLIENT_SECRET:config.clientSecret,
+    NCORE_GOOGLE_OWNER_SUB:config.ownerSub,
+    NCORE_AUTH_REDIS_URL:config.redisUrl,
+    NCORE_AUTH_REDIS_TOKEN:config.redisToken,
+    NCORE_AUTH_CSRF_SECRET:config.csrfSecret,
+  };
+  for(const [name,value,expectedCode] of [
+    ['NCORE_OWNER_AUTH_ORIGIN','https://neural.example.invalid/','OWNER_ORIGIN_HTTPS_REQUIRED'],
+    ['NCORE_GOOGLE_CLIENT_ID','bad-client-id','GOOGLE_CLIENT_ID_INVALID'],
+    ['NCORE_GOOGLE_CLIENT_SECRET','invalid','GOOGLE_CLIENT_SECRET_MISSING'],
+    ['NCORE_GOOGLE_OWNER_SUB','someone@example.test','GOOGLE_OWNER_SUB_INVALID'],
+    ['NCORE_AUTH_CSRF_SECRET','short-secret','AUTH_CSRF_SECRET_INVALID'],
+    ['NCORE_AUTH_REDIS_TOKEN','bad','AUTH_REDIS_TOKEN_INVALID'],
+    ['NCORE_AUTH_REDIS_URL','tcp://secret.example.invalid','AUTH_REDIS_URL_HTTPS_REQUIRED'],
+  ]){
+    assert.throws(()=>readOwnerConfig({...env,[name]:value}),
+      error=>error instanceof OwnerConfigError && error.code===expectedCode && !error.message.includes(value),
+      name+' must produce only safe diagnostic code');
+  }
 });
