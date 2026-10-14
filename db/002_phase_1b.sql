@@ -6,6 +6,7 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_record_id text;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 CREATE INDEX IF NOT EXISTS conversations_owner_page_idx ON conversations(owner_id, received_at DESC, id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS conversations_owner_source_page_idx ON conversations(owner_id,source_id,received_at DESC,id DESC) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS conversations_source_record_idx ON conversations(owner_id, source_id, source_record_id) WHERE source_record_id IS NOT NULL;
 
 ALTER TABLE memory_nodes ADD COLUMN IF NOT EXISTS owner_id text NOT NULL DEFAULT 'owner';
