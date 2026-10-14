@@ -1,0 +1,11 @@
+# Informational configuration template ONLY. Not installed or loaded by the running Oracle service.
+NCORE_BIND=127.0.0.1
+NCORE_PORT=4765
+PGHOST=/var/run/postgresql
+PGPORT=5432
+PGUSER=neuralcore_api
+PGDATABASE=neuralcore
+NCORE_TOKEN_FILE=/etc/neural-core/api.token
+# OFF by default; do not enable on Oracle until migration/auth/backup approvals.
+NCORE_MEMORY_API_ENABLED=0
+# Never put canary credentials, AGE identity, conversation data or owner secrets in Git.
