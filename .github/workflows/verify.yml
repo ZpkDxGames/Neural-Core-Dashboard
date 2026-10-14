@@ -32,6 +32,15 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
+      - name: Regenerate dependency lockfile for review
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          node - <<'OUTPUT'
+          const fs=require('node:fs');
+          const value=fs.readFileSync('package-lock.json','utf8');
+          for(let i=0,j=0;i<value.length;i+=900,j++)console.log('AUTH_LOCK_'+j+'='+JSON.stringify(value.slice(i,i+900)));
+          console.log('AUTH_LOCK_END='+Math.ceil(value.length/900));
+          OUTPUT
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix backend --no-audit --no-fund
       - name: Prepare isolated synthetic PostgreSQL
