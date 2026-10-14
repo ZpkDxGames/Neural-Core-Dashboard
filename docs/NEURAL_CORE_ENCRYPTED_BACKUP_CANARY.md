@@ -275,18 +275,24 @@ six public base tables as production: `conversations`, `memory_edges`,
 `memory_evidence`, `memory_nodes`, `messages`, `sources`.
 The existing API/PostgreSQL/Minecraft/Relay services remained active.
 
-**Status: schema and initial record-count recovery verified; full recovery
-certification pending.** Operator compared source and restored record counts
-on 2026-10-14: `sources=4`, and `conversations=0`, `messages=0`,
-`memory_nodes=0`, `memory_edges=0`, `memory_evidence=0` in **both**
-`neuralcore` and `neuralcore_restore_check`. The six schema table names
-also match. However, the operator has not yet supplied the Windows
-`pg_restore` transaction exit code. Matching counts do not establish
-record-by-record equality, constraints/index fidelity, global role/config
-recovery, disaster-recovery time, or offsite retention. In particular,
-meaningful conversation/memory content is not yet available for validation.
-Preserve the original ciphertext and private identity until all gates
-are satisfied.
+**Status: initial encrypted backup and isolated schema/data restoration
+certified (2026-10-14).** The owner confirmed the Windows binary-stream
+`pg_restore --exit-on-error --single-transaction --no-owner --no-acl`
+invocation targeting `neuralcore_restore_check` returned **exit code 0**.
+Operator compared source and restored record counts:
+`sources=4`; `conversations=0`, `messages=0`, `memory_nodes=0`,
+`memory_edges=0`, `memory_evidence=0` in **both** databases.
+The six public base table names match; the encrypted archive and its
+transferred Windows copy passed SHA-256 integrity checks. The production
+database was not the restore target.
+
+**Remaining production gates:** this is a schema and initial seed-data
+recovery test, not a full disaster-recovery guarantee. Realistic conversation
+content, record-level equality, constraints/index fidelity, global PostgreSQL
+roles/configuration, offsite retention, restore time and live Minecraft load
+impact remain to be tested. Preserve the encrypted archive, the Windows
+private identity, and the isolated restore database until the next
+certification is complete.
 
 ### A. Stage ciphertext for download, never the decryption key
 
