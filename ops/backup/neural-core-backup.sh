@@ -17,7 +17,7 @@ cluster='16/main'
 
 command -v age >/dev/null 2>&1 || fail "age CLI is missing (install only after reviewing service-restart prompts)"
 command -v pg_dump >/dev/null 2>&1 || fail "pg_dump is missing"
-command -v runuser >/dev/null 2>&1 || fail "runuser is missing"
+command -v setpriv >/dev/null 2>&1 || fail "setpriv (util-linux) is missing"
 [[ -d "$backup_dir" ]] || fail "$backup_dir does not exist"
 [[ "$(stat -c '%U:%G %a' "$backup_dir")" == 'root:root 700' ]] ||
   fail "$backup_dir must be root:root mode 0700"
@@ -58,7 +58,10 @@ trap 'rm -f -- "$partial"' EXIT
 
 # Pipe the compressed PG custom dump directly into AGE encryption, never
 # writing plaintext database contents to the VPS filesystem.
-runuser -u postgres -- pg_dump \
+# The hardened systemd unit grants only CAP_SETUID/CAP_SETGID. runuser invokes
+# PAM and fails here because PAM attempts additional privileged operations.
+# setpriv changes identity directly, bypassing PAM and avoiding wider caps.
+setpriv --reuid=postgres --regid=postgres --clear-groups -- pg_dump \
   --host=/var/run/postgresql --port=5432 \
   --username=postgres --dbname="$database" \
   --format=custom --compress=3 \
