@@ -35,24 +35,41 @@ const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 const key = (category: string, token: string) => PREFIX + category + ':' + digest(token);
 const secretPattern = /^[A-Za-z0-9_-]{40,}$/;
 
+/** Stable diagnostic identifier only; does not embed configuration values or secrets. */
+export class OwnerConfigError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = 'OwnerConfigError';
+  }
+}
+
 export function readOwnerConfig(env: Record<string,string|undefined>): OwnerConfig | null {
   if (env.NCORE_OWNER_AUTH_ENABLED !== '1') return null;
   const origin = env.NCORE_OWNER_AUTH_ORIGIN ?? '';
   let url: URL;
-  try { url = new URL(origin); } catch { throw Error('Invalid owner auth origin'); }
-  if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw Error('HTTPS owner auth origin required');
+  try { url = new URL(origin); } catch { throw new OwnerConfigError('OWNER_ORIGIN_INVALID'); }
+  if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password)
+    throw new OwnerConfigError('OWNER_ORIGIN_HTTPS_REQUIRED');
   const clientId = env.NCORE_GOOGLE_CLIENT_ID ?? '';
   const clientSecret = env.NCORE_GOOGLE_CLIENT_SECRET ?? '';
   const ownerSub = env.NCORE_GOOGLE_OWNER_SUB ?? '';
   const redisUrl = env.NCORE_AUTH_REDIS_URL ?? '';
   const redisToken = env.NCORE_AUTH_REDIS_TOKEN ?? '';
   const csrfSecret = env.NCORE_AUTH_CSRF_SECRET ?? '';
-  if (!/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(clientId) ||
-      clientSecret.length < 16 || !/^\d{6,255}$/.test(ownerSub) ||
-      !secretPattern.test(csrfSecret) || redisToken.length < 24) throw Error('Incomplete owner auth configuration');
+  if (!/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(clientId))
+    throw new OwnerConfigError('GOOGLE_CLIENT_ID_INVALID');
+  if (clientSecret.length < 16)
+    throw new OwnerConfigError('GOOGLE_CLIENT_SECRET_MISSING');
+  if (!/^\d{6,255}$/.test(ownerSub))
+    throw new OwnerConfigError('GOOGLE_OWNER_SUB_INVALID');
+  if (!secretPattern.test(csrfSecret))
+    throw new OwnerConfigError('AUTH_CSRF_SECRET_INVALID');
+  if (redisToken.length < 24)
+    throw new OwnerConfigError('AUTH_REDIS_TOKEN_INVALID');
   let redis: URL;
-  try { redis = new URL(redisUrl); } catch { throw Error('Invalid auth session store URL'); }
-  if (redis.protocol !== 'https:' || redis.username || redis.password || !redis.hostname || redis.pathname !== '/' || redis.search || redis.hash) throw Error('Invalid HTTPS auth session store');
+  try { redis = new URL(redisUrl); } catch { throw new OwnerConfigError('AUTH_REDIS_URL_INVALID'); }
+  if (redis.protocol !== 'https:' || redis.username || redis.password || !redis.hostname || redis.pathname !== '/' || redis.search || redis.hash)
+    throw new OwnerConfigError('AUTH_REDIS_URL_HTTPS_REQUIRED');
   return { origin, clientId, clientSecret, ownerSub, redisUrl, redisToken, csrfSecret };
 }
 export function ownerAllowed(identity: Identity, ownerSub: string): boolean {
