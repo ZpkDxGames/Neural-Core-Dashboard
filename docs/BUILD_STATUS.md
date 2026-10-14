@@ -17,9 +17,18 @@ Subsequent source-only edits on the branch add the indexed owner/provider pagina
 - Removal of unsafe old optional Vercel PostgreSQL ingestion, preserved IndexedDB storage.
 - Committed `package-lock.json` and `backend/package-lock.json`, and CI `npm ci`.
 
+## Authentication development (Google OIDC now approved and implemented in source)
+
+- Google OIDC authorization-code + PKCE, state, nonce, verified ID token signature via JWKS, exact owner `sub` allowlist and verified-email claim.
+- Opaque random secure HttpOnly sessions through a **proposed** separate REST Redis store, TTL expiration, rotation, explicit logout/revocation and CSRF/Origin/Fetch-Site validation.
+- `app/api/auth/owner/[action]` supports start, callback, session, rotate and logout, but returns HTTP 503 when auth environment is unconfigured. **No live Google credentials, Redis store or OIDC setup installed.**
+- Dashboard Settings shows local and owner-login status independently; no browser-to-Oracle requests.
+- CI on commit `5d019586da7ed9dce02f67c3654069f5ba0939ae`: [successful run #38503831988](https://github.com/ZpkDxGames/Neural-Core-Dashboard/actions/runs/38503831988); **19 frontend/auth tests passed, 13 backend tests passed, 0 failures**; built Next app default-off smoke, browser-bundle secret exclusion, locked installs, isolated PostgreSQL restore, typecheck and build all passed.
+
 ## Not implemented / not certified
 
-- Owner OIDC login, server session persistence/rotation/revocation, live CSRF flow, approved HTTPS ingress or BFF remote proxy; **owner security-architecture choice is a hard hold**.
+- Real Google OAuth registration, verified owner `sub` provisioning, third-party persistent session store credentials, real signed Google callback/E2E and approved HTTPS staging origin; **these are separate setup/authorization holds**.
+- Production remote BFF ingress or authenticated Oracle API delegation; **no production sync or exposure is authorized**.
 - Browser E2E of real login/sync/conflict/offline, export/retention orchestration and full evidence graph integration.
 - Global DB storage-growth quota, production-like concurrent load and latency/PSI/WAL budget certification.
 - Synthetic AGE-encrypted restoration with representative memory records; only prior empty-database recovery has operator verified exit code 0, and CI uses an unencrypted synthetic PG dump.
