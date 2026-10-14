@@ -61,7 +61,8 @@ export function ownerAllowed(identity: Identity, ownerSub: string): boolean {
 }
 export function safeEqual(a: string | undefined | null, b: string): boolean {
   if (typeof a !== 'string' || a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  const left=Buffer.from(a,'utf8'), right=Buffer.from(b,'utf8');
+  return left.length===right.length && timingSafeEqual(left,right);
 }
 export function csrfToken(secret: string, sessionToken: string): string {
   return createHmac('sha256',secret).update('csrf:' + sessionToken).digest('base64url');
