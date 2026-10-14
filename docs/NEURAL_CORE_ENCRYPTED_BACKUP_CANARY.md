@@ -275,12 +275,18 @@ six public base tables as production: `conversations`, `memory_edges`,
 `memory_evidence`, `memory_nodes`, `messages`, `sources`.
 The existing API/PostgreSQL/Minecraft/Relay services remained active.
 
-**Status: schema-level restoration evidenced, full recovery certification
-pending.** The operator has not yet supplied the Windows `pg_restore`
-transaction exit code or source/restore row-count comparison. A successful
-restore of schema does not validate data, global roles, disaster-recovery
-time or offsite retention. Preserve the original ciphertext and private
-identity until all gates are satisfied.
+**Status: schema and initial record-count recovery verified; full recovery
+certification pending.** Operator compared source and restored record counts
+on 2026-10-14: `sources=4`, and `conversations=0`, `messages=0`,
+`memory_nodes=0`, `memory_edges=0`, `memory_evidence=0` in **both**
+`neuralcore` and `neuralcore_restore_check`. The six schema table names
+also match. However, the operator has not yet supplied the Windows
+`pg_restore` transaction exit code. Matching counts do not establish
+record-by-record equality, constraints/index fidelity, global role/config
+recovery, disaster-recovery time, or offsite retention. In particular,
+meaningful conversation/memory content is not yet available for validation.
+Preserve the original ciphertext and private identity until all gates
+are satisfied.
 
 ### A. Stage ciphertext for download, never the decryption key
 
