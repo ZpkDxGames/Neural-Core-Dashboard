@@ -205,6 +205,63 @@ and `ExecMainStatus=0` are required. If the UID change still fails,
 run `pg_dump` as root or rerun repeatedly. Retain the encrypted archive
 until the later isolated restore test succeeds.
 
+## Recovery: setpriv setresuid blocked by exec capability propagation (2026-10-14)
+
+On the first retry using `setpriv`, the script preflight passed but the backup
+service failed with `ExecMainStatus=127` and:
+
+```text
+setpriv: setresuid failed: Operation not permitted
+```
+
+Root cause: `CapabilityBoundingSet=CAP_SETUID CAP_SETGID` restricted the
+privileges a process *may* have but did not ensure the shell interpreter and
+subprocess keep those privileges **effective** after `execve`.
+With `NoNewPrivileges=yes`, `setpriv` cannot elevate via its executable.
+The unit now also sets `AmbientCapabilities=CAP_SETUID CAP_SETGID`,
+which propagates **only these two existing bounded capabilities** until
+`setpriv` changes identity. It does not widen the bounding set, alter DB
+authentication, or disable the systemd sandbox.
+
+Before deploying or starting another backup, verify the intended identity
+change in a **disposable systemd unit**, without accessing PostgreSQL or
+creating archives:
+
+```bash
+sudo systemd-run --unit=neural-core-uid-probe --wait --collect --pipe \
+  -p Type=oneshot \
+  -p Slice=neural-core.slice \
+  -p NoNewPrivileges=yes \
+  -p 'CapabilityBoundingSet=CAP_SETUID CAP_SETGID' \
+  -p 'AmbientCapabilities=CAP_SETUID CAP_SETGID' \
+  -- /usr/bin/setpriv --reuid=postgres --regid=postgres --clear-groups \
+     -- /usr/bin/id -un
+```
+
+Expected output includes `postgres` and the transient probe job exits
+successfully. **If the probe fails, stop; do not retry the real backup**.
+
+After passing, update only the backup unit from the inspected checkout.
+The corrected script from the previous step should already be installed:
+
+```bash
+cd /tmp/neural-core-backup-canary
+git pull --ff-only origin ops/encrypted-backup-recovery-canary
+grep -F 'AmbientCapabilities=CAP_SETUID CAP_SETGID' \
+  ops/systemd/neural-core-backup.service
+sudo install -o root -g root -m 0644 \
+  ops/systemd/neural-core-backup.service \
+  /etc/systemd/system/neural-core-backup.service
+sudo systemctl daemon-reload
+sudo systemctl show neural-core-backup.service \
+  -p AmbientCapabilities -p NoNewPrivileges -p CapabilityBoundingSet
+sudo /usr/local/libexec/neural-core-backup --check
+```
+
+Only then, during idle Minecraft activity, trigger **one** manual
+`sudo systemctl start neural-core-backup.service` and inspect the resulting
+journal/checksum. If it fails again, stop instead of widening capabilities.
+
 ## 4 — Restore into an isolated test database, not production
 
 Move only the encrypted `.dump.age` and matching `.sha256` files to a
