@@ -299,8 +299,8 @@ On the same Windows PC that holds the private AGE identity:
 $archive = 'neuralcore-20261014T005101Z-1932323.dump.age'
 $remote = 'ubuntu@YOUR_VPS_SSH_HOST'
 $dir = Join-Path $env:USERPROFILE 'NeuralCore-Recovery'
-scp "\${remote}:/home/ubuntu/neural-core-transfer/$archive" $dir
-scp "\${remote}:/home/ubuntu/neural-core-transfer/$archive.sha256" $dir
+scp "${remote}:/home/ubuntu/neural-core-transfer/$archive" $dir
+scp "${remote}:/home/ubuntu/neural-core-transfer/$archive.sha256" $dir
 
 $checksumLine = (Get-Content -LiteralPath (Join-Path $dir "$archive.sha256") -Raw).Trim()
 $expected = ($checksumLine -split '\s+', 2)[0].ToUpperInvariant()
