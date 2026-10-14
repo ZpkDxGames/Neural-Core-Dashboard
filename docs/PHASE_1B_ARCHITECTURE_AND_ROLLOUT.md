@@ -30,9 +30,9 @@ Browser (local IndexedDB; explicit user opt-in)
   → PostgreSQL 16 peer-authenticated Unix socket
 ```
 
-**Proposal requiring owner approval:** a standards-based OIDC authorization-code + PKCE provider (Google OIDC is a free candidate, but not selected), with a strict verified `sub` allowlist, rotating HttpOnly/Secure/SameSite cookie session, persistent server-side hashed session IDs/revocation, Origin/CSRF validation on state changes, and rate-limited login/logout. BFF should authenticate each request and issue narrow, short-lived machine assertions to a protected private ingress. Avoid copying the current canary token into Vercel; rotate and scope service identity only during an approved setup. Remote API should not trust browser headers as proof of owner login. No wildcard credentialed CORS, no public registration, no fallback owner bypass.
+**Owner approved Google OIDC as the identity provider (2026-10-14);** use authorization code + PKCE and a strict verified Google sub allowlist, with a strict verified `sub` allowlist, rotating HttpOnly/Secure/SameSite cookie session, persistent server-side hashed session IDs/revocation, Origin/CSRF validation on state changes, and rate-limited login/logout. BFF should authenticate each request and issue narrow, short-lived machine assertions to a protected private ingress. Avoid copying the current canary token into Vercel; rotate and scope service identity only during an approved setup. Remote API should not trust browser headers as proof of owner login. No wildcard credentialed CORS, no public registration, no fallback owner bypass.
 
-**Explicit approval still needed:** trusted identity provider + owner's subject allowlist method; approved dashboard origin(s) and a dedicated HTTPS hostname or trusted tunnel; TLS termination and service-to-service credential strategy; session lifetime/revocation/recovery; Caddy/firewall/DNS/Vercel changes. No production exposure or owner-auth activation until these are chosen and independently tested.
+**Explicit approval still needed:** exact verified owner Google `sub`, Google OAuth client provisioning, a session-store vendor and retention policy, approved dashboard origin(s), a dedicated HTTPS hostname or trusted tunnel, TLS termination and service-to-service credential strategy, Caddy/firewall/DNS/Vercel changes. Google OIDC code is implemented but disabled, as documented in `docs/PHASE_1B_GOOGLE_OWNER_AUTH.md`. No production exposure or owner-auth activation until these are chosen and independently tested.
 
 ## Migration operator gate — NOT YET APPROVED FOR LIVE USE
 
@@ -69,7 +69,7 @@ Every non-health personal route requires exact bearer token + loopback and rejec
 
 CI uses synthetic PostgreSQL 16, a disposable `ncore_phase1b_test`, migration twice (checksum idempotency), least privilege, CRUD/replay/conflict, provenance and deletion; HTTP security, pagination, failed-open tests, frontend unit/typecheck/build and backup sandbox contract. No personal archives are test inputs.
 
-**Still required:** actual PostgreSQL backup-with-synthetic-content → encrypted archive → Windows private-key decrypt → isolated restoration with relationships and checked rollback; session/CSRF/OIDC browser E2E; signed/rotatable ingress credentials; committed npm lockfiles and dependency audit; load tests with p95/p99/PSI/WAL budget; live TPS/MSPT measurements; staged artifact checksum and rollback rehearsal; operator approval. Synthetic CI is not Oracle certification.
+**Still required:** live approved Google login and session-store staging certification, browser E2E, real provider failure-injection; actual PostgreSQL backup-with-synthetic-content → encrypted archive → Windows private-key decrypt → isolated restoration with relationships and checked rollback; session/CSRF/OIDC browser E2E; signed/rotatable ingress credentials; committed npm lockfiles and dependency audit; load tests with p95/p99/PSI/WAL budget; live TPS/MSPT measurements; staged artifact checksum and rollback rehearsal; operator approval. Synthetic CI is not Oracle certification.
 
 ## Ownership / stop conditions
 
