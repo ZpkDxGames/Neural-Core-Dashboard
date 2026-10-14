@@ -66,6 +66,12 @@ jobs:
           grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
       - run: npm run typecheck
       - run: npm run build
+      - name: Ensure owner identity credentials are absent from browser bundles
+        run: |
+          if grep -R -E 'NCORE_GOOGLE_CLIENT_SECRET|NCORE_AUTH_REDIS_TOKEN|NCORE_AUTH_CSRF_SECRET|NCORE_GOOGLE_OWNER_SUB' .next/static/; then
+            echo 'FAIL: owner identity environment or allowlist referenced in client bundle' >&2
+            exit 1
+          fi
       - name: Reject all owner endpoints when authentication is unconfigured
         run: |
           set -euo pipefail
