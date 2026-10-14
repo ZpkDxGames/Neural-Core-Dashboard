@@ -1,12 +1,12 @@
 # Phase 1b — Google OIDC owner authentication (development only)
 
-**Status:** implementation in draft [PR #6](https://github.com/ZpkDxGames/Neural-Core-Dashboard/pull/6). This is source and synthetic test authorization only. **The user has NOT authorized Vercel production configuration, Google OAuth client provisioning, remote sync, DNS, Caddy, Oracle changes, or Redis service provisioning.**
+**Status:** implementation in draft [PR #6](https://github.com/ZpkDxGames/Neural-Core-Dashboard/pull/6). This is source and synthetic test authorization only. **The user has approved Upstash Redis free tier as the session-store provider; account/database creation and credentials remain an owner-controlled setup step. No production Vercel configuration, Google OAuth client provisioning, remote sync, DNS, Caddy, or Oracle changes are authorized.**
 
 ## Architecture decision ADR-1B-02
 
 - Identity: Google OpenID Connect authorization-code flow with **PKCE S256**, per-request **state** and **nonce**, implemented with `openid-client 6.8.8`. The library validates signed Google ID tokens (JWKS), issuer, client audience, expiry, expected nonce, code verifier and callback state. Only the exact allowlisted Google **`sub`** with `email_verified=true` can establish a session. Email is never the account primary key; there is no signup.
 - Identity web surface: `/api/auth/owner/start`, `callback`, `session`, `logout`, `rotate` in Next.js, server-side only. Disabled unless `NCORE_OWNER_AUTH_ENABLED=1` **and** every setting passes validation. Unconfigured deployment returns `503 AUTH_NOT_CONFIGURED` and remains local-only.
-- Sessions: separate **session-only** Redis-compatible REST store (`@upstash/redis`, proposed—not created/approved). This is NOT a second conversation or memory database. Redis contains five-minute OIDC pending transactions and eight-hour revocable sessions (hashed random bearer IDs as keys). Redis receives no conversations, memory nodes, message excerpts, email claims or Google tokens. Flow records contain only state, nonce, verifier and hashed browser cookie binding; TTL 300 seconds. Logout deletes the shared session record. Rotation atomically consumes the old key with GETDEL before issuing a new session cookie (fail closed on storage error).
+- Sessions: separate **session-only** Redis-compatible REST store (`@upstash/redis`, Upstash free tier approved; not provisioned). This is NOT a second conversation or memory database. Redis contains five-minute OIDC pending transactions and eight-hour revocable sessions (hashed random bearer IDs as keys). Redis receives no conversations, memory nodes, message excerpts, email claims or Google tokens. Flow records contain only state, nonce, verifier and hashed browser cookie binding; TTL 300 seconds. Logout deletes the shared session record. Rotation atomically consumes the old key with GETDEL before issuing a new session cookie (fail closed on storage error).
 - Cookies: randomized opaque `__Host-nc-owner` and `__Host-nc-google-flow` cookies, `Secure; HttpOnly; SameSite=Lax; Path=/`, no localStorage or `NEXT_PUBLIC_*` secrets. Auth endpoints emit `Cache-Control: no-store, private`, restrictive CSP, no CORS permission.
 - CSRF: mutation requests require exact allowed `Origin`, safe Fetch Metadata policy and header `X-NCore-CSRF` computed via HMAC of session token using server-only secret; token is retrieved from authenticated `GET /session`. No CSRF header => 403, even when cookie is valid. Login callback requires both single-use state and same-browser flow binding.
 - Rate limit: shared server-side 80 auth starts per ten-minute window; does not trust spoofable IP headers. This is a conservative pre-staging default, not a substitute for edge rate-limiting.
@@ -40,7 +40,7 @@ Build only in GitHub CI with synthetic identities. Run `npm ci && npm test && np
 
 ## Next security gates requiring separate approval
 
-1. Approve chosen session-store provider and data retention/residency policy.
+1. Upstash Redis free tier is approved for session storage; owner must create an isolated staging database and review the chosen region, privacy/data-retention settings, and credentials before configuring staging. Never commit REST URL or token.
 2. Approve exact dashboard staging origin and Google OAuth callback origin; provision Google credentials only in private provider dashboard.
 3. Perform end-to-end Google login in **approved staging** and verify wrong accounts, revoked sessions, malicious origin, replay and OAuth-denied behavior.
 4. Review owner-authorized HTTPS BFF→Oracle ingress separately. **No network changes, remote-memory read/write or cloud sync permitted by this auth approval.**
