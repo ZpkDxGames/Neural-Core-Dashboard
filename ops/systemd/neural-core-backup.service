@@ -1,0 +1,47 @@
+# Local manual-only encrypted backup. DO NOT enable this as a long-running service.
+[Unit]
+Description=Neural Core encrypted PostgreSQL backup (manual canary)
+After=postgresql@16-main.service
+Requires=postgresql@16-main.service
+ConditionPathExists=/etc/neural-core/backup-recipient.txt
+RequiresMountsFor=/var/backups/neural-core
+StartLimitIntervalSec=300
+StartLimitBurst=2
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/libexec/neural-core-backup --run
+Slice=neural-core.slice
+CPUAccounting=yes
+MemoryAccounting=yes
+IOAccounting=yes
+CPUWeight=10
+IOWeight=10
+Nice=15
+IOSchedulingClass=idle
+MemoryMax=256M
+TasksMax=48
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ReadWritePaths=/var/backups/neural-core
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+# Keep only the identity-switch capabilities effective across the shell script
+# exec chain, so setpriv can drop from root to postgres without invoking PAM.
+# BoundingSet alone limits permissions but does not propagate effective caps
+# through execve() under NoNewPrivileges=yes.
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
+LockPersonality=yes
+
+# Intentionally no [Install] section: this backup is not scheduled or enabled.
