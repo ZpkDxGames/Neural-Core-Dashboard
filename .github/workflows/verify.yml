@@ -23,5 +23,11 @@ jobs:
       - run: node --test backend/core-server.test.mjs
       - run: node --check backend/server.mjs
       - run: bash -n ops/backup/neural-core-backup.sh
+      - name: Verify restricted backup identity switching contract
+        run: |
+          grep -Fx 'NoNewPrivileges=yes' ops/systemd/neural-core-backup.service
+          grep -Fx 'CapabilityBoundingSet=CAP_SETUID CAP_SETGID' ops/systemd/neural-core-backup.service
+          grep -Fx 'AmbientCapabilities=CAP_SETUID CAP_SETGID' ops/systemd/neural-core-backup.service
+          grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
       - run: npm run typecheck
       - run: npm run build
