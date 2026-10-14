@@ -267,8 +267,20 @@ journal/checksum. If it fails again, stop instead of widening capabilities.
 **First successful encrypted archive:** on 2026-10-14, the manual backup unit
 returned `Result=success`, `ExecMainStatus=0` and created
 `neuralcore-20261014T005101Z-1932323.dump.age` (11,197 encrypted bytes).
-Its SHA-256 checksum passed on Oracle. **Full disaster recovery is not yet
-certified**, pending restoration.
+Its SHA-256 checksum passed on Oracle. On the owner’s Windows PC, a
+matching SHA-256 was verified, AGE decryption plus `pg_restore --list`
+succeeded (exit code 0), and the restored isolated database
+`neuralcore_restore_check` was subsequently observed to contain the same
+six public base tables as production: `conversations`, `memory_edges`,
+`memory_evidence`, `memory_nodes`, `messages`, `sources`.
+The existing API/PostgreSQL/Minecraft/Relay services remained active.
+
+**Status: schema-level restoration evidenced, full recovery certification
+pending.** The operator has not yet supplied the Windows `pg_restore`
+transaction exit code or source/restore row-count comparison. A successful
+restore of schema does not validate data, global roles, disaster-recovery
+time or offsite retention. Preserve the original ciphertext and private
+identity until all gates are satisfied.
 
 ### A. Stage ciphertext for download, never the decryption key
 
