@@ -45,7 +45,7 @@ export async function loadOwnerController() {
       const tokens=await oidc.authorizationCodeGrant(cfg,new URL(currentUrl),{
         pkceCodeVerifier:verifier,expectedState:state,expectedNonce:nonce,idTokenExpected:true
       },{redirect_uri:redirectUri});
-      const claims=oidc.getValidatedIdTokenClaims(tokens);
+      const claims=tokens.claims();
       if(!claims || typeof claims.sub!=='string')throw Error('No verified ID token subject');
       return {sub:claims.sub,email_verified:claims.email_verified,email:claims.email};
     }
