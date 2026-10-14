@@ -179,8 +179,12 @@ export class MemoryStore {
     return this.transaction(async(db)=>{
       const locked=await db.query('SELECT source_id FROM conversations WHERE id=$1 AND owner_id=$2 FOR UPDATE',[id,owner]);
       if (!locked.rowCount) err(404,'NOT_FOUND');
+      const affected=await db.query('SELECT DISTINCT node_id FROM memory_evidence WHERE conversation_id=$1',[id]);
       await db.query('INSERT INTO deleted_conversations(owner_id,conversation_id,source_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[owner,id,locked.rows[0].source_id]);
       await db.query('DELETE FROM conversations WHERE id=$1 AND owner_id=$2',[id,owner]);
+      for(const row of affected.rows) {
+        await db.query('DELETE FROM memory_nodes WHERE id=$1 AND owner_id=$2 AND NOT EXISTS(SELECT 1 FROM memory_evidence WHERE node_id=$1)',[row.node_id,owner]);
+      }
       return {deleted:true,scope:'server-only',tombstoned:true};
     });
   }
