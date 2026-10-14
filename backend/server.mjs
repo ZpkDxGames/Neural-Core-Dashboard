@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { checkConfig, makeHandler } from './core-server.mjs';
+import { MemoryStore } from './memory-store.mjs';
 
 const tokenPath = process.env.NCORE_TOKEN_FILE ?? '/etc/neural-core/api.token';
 if (!tokenPath.startsWith('/') || tokenPath.includes('..')) throw new Error('Invalid token file path');
@@ -20,6 +21,8 @@ const pool = new Pool({
 });
 const server = createServer(makeHandler({
   token,
+  memoryEnabled: config.memoryEnabled,
+  memoryStore: config.memoryEnabled ? new MemoryStore(pool, token) : null,
   probe: async () => {
     const result = await pool.query('SELECT 1 AS ready');
     if (result.rows[0]?.ready !== 1) throw new Error('Unready database');
@@ -30,7 +33,7 @@ server.requestTimeout = 10000;
 server.headersTimeout = 10000;
 server.keepAliveTimeout = 3000;
 server.listen(config.port, config.bind, () => {
-  console.info('Neural Core local-only canary listening on loopback; no memory endpoints enabled');
+  console.info('Neural Core local-only canary listening on loopback');
 });
 let stopping = false;
 async function shutdown() {
