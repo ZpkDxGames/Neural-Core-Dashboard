@@ -2,7 +2,7 @@ name: Neural Core isolated verification
 
 on:
   push:
-    branches: [main, "development/**"]
+    branches: [main, preview, "development/**"]
   pull_request:
 
 permissions:
