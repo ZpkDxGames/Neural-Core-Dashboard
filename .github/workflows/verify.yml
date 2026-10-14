@@ -66,3 +66,27 @@ jobs:
           grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
       - run: npm run typecheck
       - run: npm run build
+      - name: Reject all owner endpoints when authentication is unconfigured
+        run: |
+          set -euo pipefail
+          NCORE_OWNER_AUTH_ENABLED=0 npm run start -- --hostname 127.0.0.1 --port 3099 >/tmp/ncore-auth-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 35); do
+            if curl --max-time 2 -s -o /dev/null http://127.0.0.1:3099/; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          for action in start callback session; do
+            status=$(curl --max-time 5 -s -o /tmp/ncore-auth-result -w "%{http_code}" "http://127.0.0.1:3099/api/auth/owner/$action")
+            test "$status" = 503
+            grep -q 'AUTH_NOT_CONFIGURED' /tmp/ncore-auth-result
+          done
+          for action in logout rotate; do
+            status=$(curl --max-time 5 -s -X POST -o /tmp/ncore-auth-result -w "%{http_code}" "http://127.0.0.1:3099/api/auth/owner/$action")
+            test "$status" = 503
+            grep -q 'AUTH_NOT_CONFIGURED' /tmp/ncore-auth-result
+          done
+          test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3099/api/v1/ingest)" = 404
+
