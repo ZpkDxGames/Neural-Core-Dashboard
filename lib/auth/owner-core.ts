@@ -37,8 +37,10 @@ const secretPattern = /^[A-Za-z0-9_-]{40,}$/;
 
 /** Stable diagnostic identifier only; does not embed configuration values or secrets. */
 export class OwnerConfigError extends Error {
-  constructor(public readonly code: string) {
+  readonly code: string;
+  constructor(code: string) {
     super(code);
+    this.code = code;
     this.name = 'OwnerConfigError';
   }
 }
