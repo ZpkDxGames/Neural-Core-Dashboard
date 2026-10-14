@@ -156,6 +156,55 @@ sudo bash -c 'cd /var/backups/neural-core && sha256sum -c -- *.sha256'
 
 This is **not** a restore test.
 
+## Recovery: hardened-unit runuser/PAM UID failure (2026-10-14)
+
+On Oracle Ubuntu, the first backup attempted to call `runuser -u postgres`
+inside the restricted `neural-core-backup.service` and failed:
+
+```text
+pam_keyinit(runuser:session): Unable to change UID to 110 temporarily
+runuser: cannot set user id: Operation not permitted
+```
+
+Cause: `runuser` invokes PAM, which attempts operations beyond the restricted
+systemd unit's privileges. A backup was **not completed**. The corrected backup
+script uses util-linux `setpriv` for a direct PAM-free
+`root -> postgres` identity change with
+`--reuid=postgres --regid=postgres --clear-groups`.
+Keep `CapabilityBoundingSet=CAP_SETUID CAP_SETGID` and
+`NoNewPrivileges=yes`; do not relax other service restrictions.
+
+To deploy **only** the script fix from the reviewed branch, from its
+existing shallow working tree:
+
+```bash
+cd /tmp/neural-core-backup-canary
+git pull --ff-only origin ops/encrypted-backup-recovery-canary
+bash -n ops/backup/neural-core-backup.sh
+grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' \
+  ops/backup/neural-core-backup.sh
+sudo install -D -o root -g root -m 0755 \
+  ops/backup/neural-core-backup.sh /usr/local/libexec/neural-core-backup
+sudo /usr/local/libexec/neural-core-backup --check
+```
+
+Only after checks pass and no Minecraft backup is running, trigger one
+manual backup:
+
+```bash
+sudo systemctl reset-failed neural-core-backup.service
+sudo systemctl start neural-core-backup.service
+systemctl show neural-core-backup.service \
+  -p ActiveState -p Result -p ExecMainStatus -p Slice -p MemoryPeak
+sudo journalctl -u neural-core-backup.service -n 16 --no-pager
+```
+
+The oneshot is normally `inactive` afterward, but `Result=success`
+and `ExecMainStatus=0` are required. If the UID change still fails,
+**stop** and capture the short journal; don't bypass privilege separation,
+run `pg_dump` as root or rerun repeatedly. Retain the encrypted archive
+until the later isolated restore test succeeds.
+
 ## 4 — Restore into an isolated test database, not production
 
 Move only the encrypted `.dump.age` and matching `.sha256` files to a
