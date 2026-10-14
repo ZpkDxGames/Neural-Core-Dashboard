@@ -9,6 +9,8 @@ function googleClient(clientId: string, secret: string): Promise<oidc.Configurat
     oidcConfig = oidc.discovery(new URL('https://accounts.google.com'),clientId,secret).then(cfg=>{
       cfg.timeout = 8;
       if(cfg.serverMetadata().issuer!=='https://accounts.google.com')throw Error('Unexpected issuer');
+      // Require Google's JWKS-backed signature validation even when token exchange used TLS.
+      oidc.enableNonRepudiationChecks(cfg);
       return cfg;
     }).catch(error=>{oidcConfig=null;throw error;});
   }
