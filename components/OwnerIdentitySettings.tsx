@@ -12,8 +12,15 @@ export function OwnerIdentitySettings(){
     setState('checking');
     try{
       const response=await fetch('/api/auth/owner/session',{cache:'no-store',credentials:'same-origin'});
-      if(response.status===503){setState('disabled');return;}
-      if(response.status===401){setCsrf(null);setState('guest');return;}
+      if(response.status===503){
+        // A broken configuration and a disabled feature have different server error codes.
+        // Do not report every backend failure as "Not configured".
+        const body=await response.json().catch(()=>null) as {error?:unknown}|null;
+        setCsrf(null);setExpiry(null);
+        setState(body?.error==='AUTH_NOT_CONFIGURED'?'disabled':'unavailable');
+        return;
+      }
+      if(response.status===401){setCsrf(null);setExpiry(null);setState('guest');return;}
       if(!response.ok)throw Error('Unavailable');
       const body=await response.json() as SessionResponse;
       if(!body.authenticated||typeof body.csrf!=='string')throw Error('Invalid session');
