@@ -10,7 +10,7 @@ The prior Vercel `/api/v1/ingest` route and `lib/db.ts` are removed in Phase 1b 
 
 Phase 1b adds machine-authenticated developer routes that are **off by default** (set `NCORE_MEMORY_API_ENABLED=1` only in an approved isolated local testing environment). Those routes are not a substitute for owner sessions. Never put the existing canary bearer token in a browser, Vercel, `NEXT_PUBLIC_*`, localStorage or repository.
 
-Before any remote ingress: approve an OIDC/passkey owner identity and allowlist; implement server-side session revocation, CSRF and same-origin validation; approve a dedicated HTTPS entry point with separately scoped, short-lived backend credentials. Do not reuse PlexonPanel ingress, expose PostgreSQL TCP, weaken systemd sandbox or modify Minecraft.
+Google OIDC has been approved as the identity provider and implemented on the draft branch with state, nonce, PKCE, explicit owner-sub allowlist, revocable server sessions and CSRF defense. The identity routes are OFF unless all private settings are configured. Separate authorization remains mandatory for session-store provisioning, Google OAuth client secrets, production HTTPS ingress, BFF-to-Oracle connectivity, DNS/Caddy/firewall changes and any remote sync. Do not reuse PlexonPanel ingress, expose PostgreSQL TCP, weaken systemd sandbox or modify Minecraft.
 
 ## Vulnerability disclosure
 
