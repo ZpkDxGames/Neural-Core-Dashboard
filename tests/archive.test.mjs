@@ -37,3 +37,12 @@ test('AI keyword requires a word boundary rather than matching email',()=>{
   const c={id:'generic:email',provider:'generic',title:'Email notes',createdAt:null,updatedAt:null,tags:[],messages:[{id:'m',role:'user',text:'Email a friendly thank-you',at:null}]};
   assert.notEqual(classify(c),'AI & Automation');
 });
+
+
+test('normalized browser export reimport retains original provider-scoped IDs',()=>{
+ const original={id:'gemini:stable-record-1',provider:'gemini',title:'Synthetic',createdAt:null,updatedAt:null,messages:[{id:'message-1',role:'user',text:'Synthetic only',at:null}],tags:[]};
+ const parsed=parseArchive({format:'neural-core-v1',conversations:[original]});
+ assert.equal(parsed.conversations[0].id,original.id);
+ const parsedAgain=parseArchive({conversations:parsed.conversations});
+ assert.equal(parsedAgain.conversations[0].id,original.id);
+});

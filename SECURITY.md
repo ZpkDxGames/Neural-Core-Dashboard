@@ -1,9 +1,17 @@
-# Security and privacy policy
+# Security policy — Neural Core
 
-This is a public source-code repository for a **local-first personal knowledge dashboard**. Do **not** open issues or commits containing conversation archives, screenshots of confidential chats, credentials, tokens, or personal memory data.
+Neural Core is a public, local-first personal knowledge dashboard. Never upload actual conversations, confidential logs, tokens, private AGE keys, encrypted archive plaintext or passwords to this repository or CI.
 
-The alpha dashboard offers no owner authentication or remote personal data readback. Importing conversation JSON through the UI stores content in the current browser's IndexedDB, **not** in the GitHub repository or Vercel function storage. The web URL itself is public unless separately protected.
+## Existing deployment boundary
 
-The optional `/api/v1/ingest` endpoint is **disabled** unless configured. Never configure its token or `DATABASE_URL` until authentication, rate limiting, TLS connectivity, least-privilege database access and recovery are reviewed. No server sync is enabled during the alpha bootstrap.
+The dashboard's local import persists in browser IndexedDB. There is no active browser-to-Oracle synchronization or owner login. A local import never sends content to a server.
 
-Do not disclose suspected security vulnerabilities in a public issue if they include sensitive details.
+The prior Vercel `/api/v1/ingest` route and `lib/db.ts` are removed in Phase 1b to prevent an accidental second data store. The sole backend is the loopback-only Node server on the existing Oracle canary.
+
+Phase 1b adds machine-authenticated developer routes that are **off by default** (set `NCORE_MEMORY_API_ENABLED=1` only in an approved isolated local testing environment). Those routes are not a substitute for owner sessions. Never put the existing canary bearer token in a browser, Vercel, `NEXT_PUBLIC_*`, localStorage or repository.
+
+Google OIDC has been approved as the identity provider and implemented on the draft branch with state, nonce, PKCE, explicit owner-sub allowlist, revocable server sessions and CSRF defense. The identity routes are OFF unless all private settings are configured. Separate authorization remains mandatory for session-store provisioning, Google OAuth client secrets, production HTTPS ingress, BFF-to-Oracle connectivity, DNS/Caddy/firewall changes and any remote sync. Do not reuse PlexonPanel ingress, expose PostgreSQL TCP, weaken systemd sandbox or modify Minecraft.
+
+## Vulnerability disclosure
+
+Do not include private user conversation excerpts, credentials, backups or screenshots of personal data in issues or PR discussions. Refer to `docs/PHASE_1B_ARCHITECTURE_AND_ROLLOUT.md` for gates and limitations.

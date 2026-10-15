@@ -1,8 +1,8 @@
-name: Foundation verification
+name: Neural Core isolated verification
 
 on:
   push:
-    branches: [main, "development/**"]
+    branches: [main, preview, "development/**"]
   pull_request:
 
 permissions:
@@ -11,19 +11,62 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NCORE_TEST_REDIS_PORT: 6379
+      PGPASSWORD: synthetic-ci-only
+      NCORE_TEST_ADMIN_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_phase1b_test
+      NCORE_TEST_API_URL: postgresql://neuralcore_api:synthetic-ci-role@127.0.0.1:5432/ncore_phase1b_test
+      NCORE_TEST_INVALID_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_phase1b_invalid_test
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      # Alpha bootstrap has no lock file yet; generate and commit one before release.
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --prefix backend --no-audit --no-fund
+      - name: Prepare isolated synthetic PostgreSQL
+        run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE neuralcore_api LOGIN PASSWORD 'synthetic-ci-role';"
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase1b_test OWNER postgres;"
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -f db/001_init.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase1b_invalid_test OWNER postgres;"
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_invalid_test -v ON_ERROR_STOP=1 -f db/001_init.sql
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_invalid_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title) VALUES('chatgpt:invalid-fixture','chatgpt','Synthetic invalid'); INSERT INTO memory_nodes(id,node_type,label) VALUES('synthetic-node','fact','Synthetic'); INSERT INTO memory_evidence(node_id,conversation_id,message_id) VALUES('synthetic-node','chatgpt:invalid-fixture','does-not-exist');"
       - run: npm test
-      - run: node --test backend/core-server.test.mjs
-      - run: node --check backend/server.mjs
+      - run: node --test backend/*.test.mjs
+      - name: Synthetic PostgreSQL backup and isolated restore round trip (no AGE keys)
+        run: |
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title,owner_id,content_hash) VALUES('chatgpt:synthetic-restore','chatgpt','Synthetic restore fixture','owner',repeat('a',64));"
+          psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -c "INSERT INTO messages(conversation_id,message_id,role,body) VALUES('chatgpt:synthetic-restore','m1','user','Synthetic backup fixture only');"
+          pg_dump -h 127.0.0.1 -U postgres -d ncore_phase1b_test -Fc -f /tmp/ncore-synthetic.dump
+          sha256sum /tmp/ncore-synthetic.dump > /tmp/ncore-synthetic.sha256
+          sha256sum -c /tmp/ncore-synthetic.sha256
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase1b_restore_test OWNER postgres;"
+          pg_restore -h 127.0.0.1 -U postgres -d ncore_phase1b_restore_test --exit-on-error --single-transaction --no-owner --no-acl /tmp/ncore-synthetic.dump
+          test "$(psql -h 127.0.0.1 -U postgres -d ncore_phase1b_restore_test -Atc "SELECT count(*) FROM messages WHERE body='Synthetic backup fixture only'")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d ncore_phase1b_restore_test -Atc "SELECT count(*) FROM pg_constraint WHERE conname='memory_evidence_real_message_fk' AND convalidated")" = "1"
+          rm -f /tmp/ncore-synthetic.dump /tmp/ncore-synthetic.sha256
+      - run: node --check backend/server.mjs && node --check backend/migrate.mjs && node --check backend/memory-api.mjs && node --check backend/memory-store.mjs
       - run: bash -n ops/backup/neural-core-backup.sh
-      - name: Verify restricted backup identity switching contract
+      - name: Verify restricted encrypted backup contract
         run: |
           grep -Fx 'NoNewPrivileges=yes' ops/systemd/neural-core-backup.service
           grep -Fx 'CapabilityBoundingSet=CAP_SETUID CAP_SETGID' ops/systemd/neural-core-backup.service
@@ -31,3 +74,36 @@ jobs:
           grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
       - run: npm run typecheck
       - run: npm run build
+      - name: Install isolated browser test runtime
+        run: npx playwright install --with-deps chromium
+      - name: Owner authentication UI regression tests (synthetic responses only)
+        run: npm run test:auth-ui
+      - name: Ensure owner identity credentials are absent from browser bundles
+        run: |
+          if grep -R -E 'NCORE_GOOGLE_CLIENT_SECRET|NCORE_AUTH_REDIS_TOKEN|NCORE_AUTH_CSRF_SECRET|NCORE_GOOGLE_OWNER_SUB' .next/static/; then
+            echo 'FAIL: owner identity environment or allowlist referenced in client bundle' >&2
+            exit 1
+          fi
+      - name: Reject all owner endpoints when authentication is unconfigured
+        run: |
+          set -euo pipefail
+          NCORE_OWNER_AUTH_ENABLED=0 npm run start -- --hostname 127.0.0.1 --port 3099 >/tmp/ncore-auth-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 35); do
+            if curl --max-time 2 -s -o /dev/null http://127.0.0.1:3099/; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          for action in start callback session; do
+            status=$(curl --max-time 5 -s -o /tmp/ncore-auth-result -w "%{http_code}" "http://127.0.0.1:3099/api/auth/owner/$action")
+            test "$status" = 503
+            grep -q 'AUTH_NOT_CONFIGURED' /tmp/ncore-auth-result
+          done
+          for action in logout rotate; do
+            status=$(curl --max-time 5 -s -X POST -o /tmp/ncore-auth-result -w "%{http_code}" "http://127.0.0.1:3099/api/auth/owner/$action")
+            test "$status" = 503
+            grep -q 'AUTH_NOT_CONFIGURED' /tmp/ncore-auth-result
+          done
+          test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3099/api/v1/ingest)" = 404

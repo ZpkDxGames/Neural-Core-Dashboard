@@ -22,6 +22,10 @@ function textFromParts(input: unknown): string {
   if (Array.isArray(o.content)) return textFromParts(o.content);
   return str(o.text);
 }
+function scopedId(provider: Provider, original: string, index: number): string {
+  if (!original) return provider + ':unidentified-row-' + index;
+  return original.startsWith(provider + ':') ? original : provider + ':' + original;
+}
 function providerRole(raw: unknown): CoreMessage['role'] {
   const r = str(raw).toLowerCase();
   return ['user', 'human'].includes(r) ? 'user' : ['assistant', 'ai', 'model', 'chatgpt'].includes(r) ? 'assistant' : 'other';
@@ -56,7 +60,7 @@ function chatgptConv(raw: unknown, index: number): Conversation|null {
     messages.push({id: str(m.id) || `m${messages.length}`, role: providerRole(asObj(m.author).role), text: body.slice(0,50000), at: date(m.create_time)});
   }
   if (!messages.length) return null;
-  return {id: `chatgpt:${str(c.id)||index}`,provider:'chatgpt',title: str(c.title)||'Untitled conversation',createdAt:date(c.create_time),updatedAt:date(c.update_time),messages,tags:[]};
+  return {id: scopedId('chatgpt',str(c.id),index),provider:'chatgpt',title: str(c.title)||'Untitled conversation',createdAt:date(c.create_time),updatedAt:date(c.update_time),messages,tags:[]};
 }
 function claudeConv(raw: unknown, index: number): Conversation|null {
   const c = asObj(raw);
@@ -66,7 +70,7 @@ function claudeConv(raw: unknown, index: number): Conversation|null {
     return { id: str(m.uuid) || `m${i}`, role: providerRole(m.sender), text: textFromParts(m.content), at: date(m.created_at) };
   }).filter((m: CoreMessage) => m.text.trim());
   if (!messages.length) return null;
-  return {id:`claude:${str(c.uuid)||index}`,provider:'claude',title:str(c.name)||'Untitled conversation', createdAt:date(c.created_at), updatedAt:date(c.updated_at), messages, tags:[]};
+  return {id:scopedId('claude',str(c.uuid),index),provider:'claude',title:str(c.name)||'Untitled conversation', createdAt:date(c.created_at), updatedAt:date(c.updated_at), messages, tags:[]};
 }
 function genericConv(raw: unknown, index: number): Conversation|null {
   const c = asObj(raw);
@@ -78,7 +82,7 @@ function genericConv(raw: unknown, index: number): Conversation|null {
     return {id:str(m.id)||`m${i}`,role:providerRole(m.role),text:textFromParts(m.content ?? m.text).slice(0,50000),at:date(m.createdAt ?? m.timestamp)};
   }).filter((m: CoreMessage)=>m.text.trim());
   if (!messages.length) return null;
-  return {id:`${provider}:${str(c.id)||index}`,provider,title:str(c.title)||'Untitled conversation',createdAt:date(c.createdAt),updatedAt:date(c.updatedAt),messages,tags:[]};
+  return {id:scopedId(provider,str(c.id),index),provider,title:str(c.title)||'Untitled conversation',createdAt:date(c.createdAt),updatedAt:date(c.updatedAt),messages,tags:[]};
 }
 export function parseArchive(raw: unknown): ImportResult {
   const top = asObj(raw);
