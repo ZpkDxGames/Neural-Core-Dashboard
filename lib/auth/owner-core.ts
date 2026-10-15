@@ -9,9 +9,16 @@ export type OwnerConfig = {
   redisToken: string;
   csrfSecret: string;
 };
-export type Flow = { binding: string; nonce: string; verifier: string; state: string };
+export type Flow = { binding: string; nonce: string; verifier: string; state: string; expiresAt: number };
 export type Identity = { sub?: unknown; email_verified?: unknown; email?: unknown };
-export type Session = { sub: string; expiresAt: number; issuedAt: number };
+export type Session = { sub: string; expiresAt: number; issuedAt: number; family: string };
+type Family = { sub: string; expiresAt: number };
+export type AuthEvent = 'AUTH_STORAGE_UNAVAILABLE' | 'GOOGLE_PROVIDER_UNAVAILABLE' |
+  'GOOGLE_EXCHANGE_REJECTED' | 'CALLBACK_REJECTED' | 'ACCOUNT_REJECTED' | 'LOGIN_RATE_LIMITED';
+export class AuthDependencyError extends Error {
+  readonly code: AuthEvent;
+  constructor(code: AuthEvent) { super(code); this.code=code; this.name='AuthDependencyError'; }
+}
 export type Store = {
   get<T>(key: string): Promise<T | null>;
   take<T>(key: string): Promise<T | null>;
@@ -29,10 +36,9 @@ const LOGIN_TTL = 300;
 const SESSION_TTL = 8 * 3600;
 const LIMIT_WINDOW = 600;
 const LIMIT = 80;
-const PREFIX = 'nc:auth:v1:';
+const PREFIX = 'nc:auth:v2:';
 const random = () => randomBytes(32).toString('base64url');
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
-const key = (category: string, token: string) => PREFIX + category + ':' + digest(token);
 const secretPattern = /^[A-Za-z0-9_-]{40,}$/;
 
 /** Stable diagnostic identifier only; does not embed configuration values or secrets. */
@@ -47,11 +53,19 @@ export class OwnerConfigError extends Error {
 
 export function readOwnerConfig(env: Record<string,string|undefined>): OwnerConfig | null {
   if (env.NCORE_OWNER_AUTH_ENABLED !== '1') return null;
-  const origin = env.NCORE_OWNER_AUTH_ORIGIN ?? '';
+  const configuredOrigin = (env.NCORE_OWNER_AUTH_ORIGIN ?? '').trim();
   let url: URL;
-  try { url = new URL(origin); } catch { throw new OwnerConfigError('OWNER_ORIGIN_INVALID'); }
-  if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password)
+  try { url = new URL(configuredOrigin); } catch { throw new OwnerConfigError('OWNER_ORIGIN_INVALID'); }
+  if (url.protocol !== 'https:' || url.username || url.password)
     throw new OwnerConfigError('OWNER_ORIGIN_HTTPS_REQUIRED');
+  if (!/^https:\/\/[^\s/?#\\]+\/?$/i.test(configuredOrigin) || url.pathname !== '/' || url.search || url.hash)
+    throw new OwnerConfigError('OWNER_ORIGIN_PATH_NOT_ALLOWED');
+  const origin = url.origin;
+  // Branch-scoped secrets must never turn on login on an unrelated Preview branch.
+  if (env.VERCEL_ENV === 'preview' && env.VERCEL_GIT_COMMIT_REF && env.VERCEL_GIT_COMMIT_REF !== 'preview')
+    throw new OwnerConfigError('AUTH_PREVIEW_BRANCH_MISMATCH');
+  if (env.VERCEL_ENV === 'preview' && env.VERCEL_BRANCH_URL && new URL('https://'+env.VERCEL_BRANCH_URL).origin !== origin)
+    throw new OwnerConfigError('AUTH_PREVIEW_ORIGIN_MISMATCH');
   const clientId = env.NCORE_GOOGLE_CLIENT_ID ?? '';
   const clientSecret = env.NCORE_GOOGLE_CLIENT_SECRET ?? '';
   const ownerSub = env.NCORE_GOOGLE_OWNER_SUB ?? '';
@@ -120,26 +134,41 @@ export function exactOrigin(req: Request, origin: string): boolean {
 }
 export function parsedCookie(req: Request, name: string): string | null {
   const cookie = req.headers.get('cookie') ?? '';
-  const found = cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='));
+  const matches = cookie.split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));
+  if(matches.length !== 1)return null;
+  const found = matches[0];
   const value = found?.slice(name.length+1);
   return value && /^[A-Za-z0-9_-]{32,128}$/.test(value) ? value : null;
 }
-function validFlow(flow: Flow | null): flow is Flow {
+function validFlow(flow: Flow | null, now: number): flow is Flow {
   return Boolean(flow && typeof flow.binding==='string' && typeof flow.nonce==='string' &&
-    typeof flow.verifier==='string' && typeof flow.state==='string');
+    typeof flow.verifier==='string' && typeof flow.state==='string' &&
+    Number.isSafeInteger(flow.expiresAt) && flow.expiresAt>now);
 }
 
-export function ownerController({config, store, provider, clock = Date.now}: {
-  config:OwnerConfig; store:Store; provider:OidcProvider; clock?:()=>number
+export function ownerController({config, store, provider, clock = Date.now, report = ()=>{}}: {
+  config:OwnerConfig; store:Store; provider:OidcProvider; clock?:()=>number; report?:(event:AuthEvent)=>void
 }) {
+  const prefix = PREFIX + digest(config.origin+'|'+config.clientId+'|'+config.ownerSub) + ':';
+  const key = (category:string,token:string) => prefix+category+':'+digest(token);
   const callback = config.origin + '/api/auth/owner/callback';
+  const onOrigin = (req:Request) => new URL(req.url).origin===config.origin;
+  const unavailable = (error:unknown, cookies:string[]=[]) => {
+    const event=error instanceof AuthDependencyError ? error.code : 'AUTH_STORAGE_UNAVAILABLE';
+    report(event);
+    return result(503,{error:'AUTH_UNAVAILABLE',reason:event==='AUTH_STORAGE_UNAVAILABLE'?'storage':'provider'},cookies);
+  };
   const authorizedSession = async(req:Request) => {
     const token=parsedCookie(req,SESSION_COOKIE);
     if (!token) return null;
     const saved=await store.get<Session>(key('session',token));
     if (!saved || saved.sub!==config.ownerSub ||
       !Number.isSafeInteger(saved.expiresAt) || saved.expiresAt<=clock() ||
-      saved.issuedAt>clock()) return null;
+      !Number.isSafeInteger(saved.issuedAt) || saved.issuedAt>clock() ||
+      saved.issuedAt<0 || saved.expiresAt-saved.issuedAt>SESSION_TTL*1000 ||
+      typeof saved.family!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(saved.family)) return null;
+    const family=await store.get<Family>(key('family',saved.family));
+    if(!family || family.sub!==config.ownerSub || family.expiresAt!==saved.expiresAt)return null;
     return {token,saved};
   };
   const requireCsrf = (req:Request, token:string): boolean => exactOrigin(req,config.origin) &&
@@ -147,84 +176,104 @@ export function ownerController({config, store, provider, clock = Date.now}: {
   return {
     async start(req:Request): Promise<Response> {
       if(req.method!=='GET')return result(405,{error:'METHOD_NOT_ALLOWED'});
+      if(!onOrigin(req))return result(409,{error:'AUTH_ORIGIN_MISMATCH'});
+      if(req.headers.get('sec-fetch-site')==='cross-site')return result(403,{error:'CSRF_DENIED'});
       try{
         // A shared, bounded server-side quota; no spoofable X-Forwarded-For trust.
-        const attempts=await store.increment(PREFIX+'login-rate',LIMIT_WINDOW);
-        if(attempts>LIMIT)return result(429,{error:'RATE_LIMITED'});
+        const attempts=await store.increment(prefix+'login-rate',LIMIT_WINDOW);
+        if(attempts>LIMIT){report('LOGIN_RATE_LIMITED');const response=result(429,{error:'RATE_LIMITED'});response.headers.set('Retry-After',String(LIMIT_WINDOW));return response;}
         const state=random(),nonce=random(),verifier=random(),binding=random();
-        const flow:Flow={state,nonce,verifier,binding:digest(binding)};
-        if(!await store.create(key('flow',state),flow,LOGIN_TTL))return result(503,{error:'AUTH_UNAVAILABLE'});
+        const flow:Flow={state,nonce,verifier,binding:digest(binding),expiresAt:clock()+LOGIN_TTL*1000};
+        if(!await store.create(key('flow',state),flow,LOGIN_TTL))throw new AuthDependencyError('AUTH_STORAGE_UNAVAILABLE');
         const url=await provider.authorize({state,nonce,verifier,redirectUri:callback});
         const target=new URL(url);
-        if(target.protocol!=='https:' || target.hostname!=='accounts.google.com' || target.username || target.password) throw Error('Unsafe provider redirect');
+        if(target.protocol!=='https:' || target.hostname!=='accounts.google.com' || target.username || target.password) throw new AuthDependencyError('GOOGLE_PROVIDER_UNAVAILABLE');
         const response=redirect(target.toString(),cookieHeader(FLOW_COOKIE,binding,LOGIN_TTL));
         // OAuth state must never be leaked through Referer.
         return response;
-      }catch{return result(503,{error:'AUTH_UNAVAILABLE'},[CLEAR_FLOW]);}
+      }catch(error){return unavailable(error,[CLEAR_FLOW]);}
     },
     async callback(req:Request): Promise<Response> {
       if(req.method!=='GET')return result(405,{error:'METHOD_NOT_ALLOWED'});
+      if(!onOrigin(req))return result(409,{error:'AUTH_ORIGIN_MISMATCH'});
       const url=new URL(req.url);
       const state=url.searchParams.get('state'), binding=parsedCookie(req,FLOW_COOKIE);
-      if(!state || !/^[A-Za-z0-9_-]{40,128}$/.test(state) || !binding)
+      if(url.searchParams.getAll('state').length!==1 || url.searchParams.getAll('code').length>1 ||
+        url.searchParams.getAll('error').length>1 || !state || !/^[A-Za-z0-9_-]{40,128}$/.test(state) || !binding)
         return redirect(config.origin+'/?auth=failed',CLEAR_FLOW);
       let flow:Flow|null;
       try{flow=await store.take<Flow>(key('flow',state));}
-      catch{return result(503,{error:'AUTH_UNAVAILABLE'},[CLEAR_FLOW]);}
-      if(!validFlow(flow) || !safeEqual(digest(binding),flow.binding) || !safeEqual(state,flow.state))
+      catch(error){unavailable(error);return redirect(config.origin+'/?auth=unavailable',CLEAR_FLOW);}
+      if(!validFlow(flow,clock()) || !safeEqual(digest(binding),flow.binding) || !safeEqual(state,flow.state))
         return redirect(config.origin+'/?auth=failed',CLEAR_FLOW);
       try {
-        if(url.origin!==config.origin || !url.searchParams.get('code') || url.searchParams.has('error'))
+        if(url.searchParams.has('error'))return redirect(config.origin+'/?auth=cancelled',CLEAR_FLOW);
+        if(!url.searchParams.get('code'))
           return redirect(config.origin+'/?auth=failed',CLEAR_FLOW);
         const identity=await provider.exchange({state,nonce:flow.nonce,verifier:flow.verifier,redirectUri:callback,currentUrl:url.toString()});
-        if(!ownerAllowed(identity,config.ownerSub))return redirect(config.origin+'/?auth=denied',CLEAR_FLOW);
-        const token=random(), now=clock(), expiresAt=now+SESSION_TTL*1000;
-        if(!await store.create(key('session',token),{sub:config.ownerSub,issuedAt:now,expiresAt},SESSION_TTL))
-          return result(503,{error:'AUTH_UNAVAILABLE'},[CLEAR_FLOW]);
-        const headers=noStore();headers.set('Location',config.origin+'/');
+        if(!ownerAllowed(identity,config.ownerSub)){report('ACCOUNT_REJECTED');return redirect(config.origin+'/?auth=denied',CLEAR_FLOW);}
+        const token=random(), family=random(), now=clock(), expiresAt=now+SESSION_TTL*1000;
+        // Family is created once at login. Rotation never recreates it, so a concurrent
+        // logout also revokes a replacement token which has not yet been delivered.
+        if(!await store.create(key('family',family),{sub:config.ownerSub,expiresAt},SESSION_TTL))
+          throw new AuthDependencyError('AUTH_STORAGE_UNAVAILABLE');
+        if(!await store.create(key('session',token),{sub:config.ownerSub,issuedAt:now,expiresAt,family},SESSION_TTL))
+          throw new AuthDependencyError('AUTH_STORAGE_UNAVAILABLE');
+        const prior=parsedCookie(req,SESSION_COOKIE);
+        if(prior){const old=await store.get<Session>(key('session',prior));if(old?.family)await store.remove(key('family',old.family));}
+        const headers=noStore();headers.set('Location',config.origin+'/?auth=signed-in');
         headers.append('Set-Cookie',CLEAR_FLOW);
         headers.append('Set-Cookie',cookieHeader(SESSION_COOKIE,token,SESSION_TTL));
         return new Response(null,{status:303,headers});
-      }catch{return redirect(config.origin+'/?auth=failed',CLEAR_FLOW);}
+      }catch(error){
+        const event=error instanceof AuthDependencyError?error.code:'GOOGLE_EXCHANGE_REJECTED';
+        report(event);
+        return redirect(config.origin+'/?auth='+(event==='AUTH_STORAGE_UNAVAILABLE'||event==='GOOGLE_PROVIDER_UNAVAILABLE'?'unavailable':'failed'),CLEAR_FLOW);
+      }
     },
     async session(req:Request):Promise<Response> {
       if(req.method!=='GET')return result(405,{error:'METHOD_NOT_ALLOWED'});
+      if(!onOrigin(req))return result(409,{error:'AUTH_ORIGIN_MISMATCH'});
       try{
         const record=await authorizedSession(req);
-        if(!record)return result(401,{authenticated:false},[CLEAR_SESSION]);
+        // Read requests never set cookies: a stale parallel response cannot erase a
+        // freshly rotated session cookie. Expired records are rejected server-side.
+        if(!record)return result(401,{authenticated:false});
         return result(200,{authenticated:true,provider:'google',expiresAt:new Date(record.saved.expiresAt).toISOString(),
           csrf:csrfToken(config.csrfSecret,record.token)});
-      }catch{return result(503,{error:'AUTH_UNAVAILABLE'});}
+      }catch(error){return unavailable(error);}
     },
     async logout(req:Request):Promise<Response> {
       if(req.method!=='POST')return result(405,{error:'METHOD_NOT_ALLOWED'});
+      if(!onOrigin(req))return result(409,{error:'AUTH_ORIGIN_MISMATCH'});
       try {
         const record=await authorizedSession(req);
-        if(!record)return result(401,{error:'UNAUTHORIZED'},[CLEAR_SESSION]);
+        if(!record)return result(401,{error:'UNAUTHORIZED'});
         if(!requireCsrf(req,record.token))return result(403,{error:'CSRF_DENIED'});
-        await store.remove(key('session',record.token));
+        await store.remove(key('family',record.saved.family));
         return result(200,{loggedOut:true},[CLEAR_SESSION]);
-      }catch{return result(503,{error:'AUTH_UNAVAILABLE'});}
+      }catch(error){return unavailable(error);}
     },
     async rotate(req:Request):Promise<Response> {
       if(req.method!=='POST')return result(405,{error:'METHOD_NOT_ALLOWED'});
+      if(!onOrigin(req))return result(409,{error:'AUTH_ORIGIN_MISMATCH'});
       try {
         const record=await authorizedSession(req);
-        if(!record)return result(401,{error:'UNAUTHORIZED'},[CLEAR_SESSION]);
+        if(!record)return result(401,{error:'UNAUTHORIZED'});
         if(!requireCsrf(req,record.token))return result(403,{error:'CSRF_DENIED'});
         // Expire old token before issuing new; fail closed on store outage.
         const taken=await store.take<Session>(key('session',record.token));
         if(!taken || taken.sub!==config.ownerSub || taken.expiresAt<=clock())
-          return result(401,{error:'UNAUTHORIZED'},[CLEAR_SESSION]);
+          return result(401,{error:'UNAUTHORIZED'});
         const ttl=Math.ceil((taken.expiresAt-clock())/1000);
-        if(ttl<=0)return result(401,{error:'UNAUTHORIZED'},[CLEAR_SESSION]);
+        if(ttl<=0)return result(401,{error:'UNAUTHORIZED'});
         const next=random();
         if(!await store.create(key('session',next),{...taken,issuedAt:clock()},ttl))
-          return result(503,{error:'AUTH_UNAVAILABLE'},[CLEAR_SESSION]);
+          throw new AuthDependencyError('AUTH_STORAGE_UNAVAILABLE');
         const headers=noStore();headers.set('Content-Type','application/json; charset=utf-8');
         headers.append('Set-Cookie',cookieHeader(SESSION_COOKIE,next,ttl));
         return new Response(JSON.stringify({rotated:true,csrf:csrfToken(config.csrfSecret,next)}),{status:200,headers});
-      }catch{return result(503,{error:'AUTH_UNAVAILABLE'});}
+      }catch(error){return unavailable(error);}
     }
   };
 }

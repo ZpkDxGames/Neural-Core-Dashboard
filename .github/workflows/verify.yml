@@ -13,6 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
       postgres:
         image: postgres:16
         env:
@@ -23,6 +30,7 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
+      NCORE_TEST_REDIS_PORT: 6379
       PGPASSWORD: synthetic-ci-only
       NCORE_TEST_ADMIN_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_phase1b_test
       NCORE_TEST_API_URL: postgresql://neuralcore_api:synthetic-ci-role@127.0.0.1:5432/ncore_phase1b_test
@@ -66,6 +74,10 @@ jobs:
           grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
       - run: npm run typecheck
       - run: npm run build
+      - name: Install isolated browser test runtime
+        run: npx playwright install --with-deps chromium
+      - name: Owner authentication UI regression tests (synthetic responses only)
+        run: npm run test:auth-ui
       - name: Ensure owner identity credentials are absent from browser bundles
         run: |
           if grep -R -E 'NCORE_GOOGLE_CLIENT_SECRET|NCORE_AUTH_REDIS_TOKEN|NCORE_AUTH_CSRF_SECRET|NCORE_GOOGLE_OWNER_SUB' .next/static/; then
@@ -95,4 +107,3 @@ jobs:
             grep -q 'AUTH_NOT_CONFIGURED' /tmp/ncore-auth-result
           done
           test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3099/api/v1/ingest)" = 404
-

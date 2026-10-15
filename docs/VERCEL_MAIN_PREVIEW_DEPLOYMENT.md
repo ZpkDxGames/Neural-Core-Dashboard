@@ -1,5 +1,7 @@
 # Vercel deployment plan: `main` + `preview`
 
+> 2026-10-15: the owner has configured authentication on the existing branch-scoped Preview environment. See [authentication stabilization audit](PHASE_1B_AUTH_STABILIZATION_AUDIT_2026-10-15.md) for current evidence, limits and certification. The original OFF-by-default preparation guidance below remains the safe baseline for new deployments.
+
 ## Current deployment mapping
 
 | Git branch | Vercel environment | Role |

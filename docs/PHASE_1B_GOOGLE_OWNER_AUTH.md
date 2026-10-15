@@ -1,4 +1,6 @@
-# Phase 1b — Google OIDC owner authentication (development only)
+# Phase 1b — Google OIDC owner authentication (Preview)
+
+> Current stabilization findings, runtime evidence and certification gates: [2026-10-15 audit](PHASE_1B_AUTH_STABILIZATION_AUDIT_2026-10-15.md). The sections below preserve the original architecture/provisioning proposal; the owner has since configured the existing Preview environment. Production release and remote synchronization remain unapproved.
 
 **Status:** implementation in draft [PR #6](https://github.com/ZpkDxGames/Neural-Core-Dashboard/pull/6). This is source and synthetic test authorization only. **The user has approved Upstash Redis free tier as the session-store provider; account/database creation and credentials remain an owner-controlled setup step. No production Vercel configuration, Google OAuth client provisioning, remote sync, DNS, Caddy, or Oracle changes are authorized.**
 

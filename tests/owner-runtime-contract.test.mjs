@@ -20,13 +20,3 @@ test('Next auth endpoint remains independent from Oracle memory API and legacy V
   assert.match(code,/nodejs/);
   assert.doesNotMatch(code,/DATABASE_URL|CORE_INGEST_TOKEN|4765|NEXT_PUBLIC_/);
 });
-
-test('Settings identifies disabled authentication separately from failed runtime configuration',()=>{
-  const view=readFileSync(new URL('../components/OwnerIdentitySettings.tsx',import.meta.url),'utf8');
-  assert.match(view,/body\?\.error==='AUTH_NOT_CONFIGURED'\?'disabled':'unavailable'/);
-  assert.doesNotMatch(view,/if\(response\.status===503\)\{setState\('disabled'\);return;\}/);
-  const route=readFileSync(new URL('../app/api/auth/owner/[action]/route.ts',import.meta.url),'utf8');
-  assert.match(route,/error instanceof OwnerConfigError/);
-  assert.match(route,/AUTH_RUNTIME_UNAVAILABLE/);
-  assert.match(route,/return json\(503,'AUTH_UNAVAILABLE'\)/);
-});

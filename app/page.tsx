@@ -26,6 +26,7 @@ const CAT_COLORS=['#91acf7','#c2a5f4','#68ddd1','#f3c67f','#83c9a7','#9cb6cc','#
 const total=(x:number)=>x.toLocaleString('en-US');
 export default function Page(){
   const [view,setView]=useState<View>('overview');
+  useEffect(()=>{const params=new URLSearchParams(window.location.search);if(params.has('auth')||params.get('view')==='settings')setView('settings');},[]);
   const [conversations,setConversations]=useState<Conversation[]>([]);
   const [importedCount,setImportedCount]=useState(0);
   const [initialized,setInitialized]=useState(false);

@@ -8,21 +8,23 @@
     "build": "next build",
     "start": "next start",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:auth-ui": "playwright test"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.0",
     "@react-three/fiber": "^9.3.0",
+    "@upstash/redis": "1.39.0",
     "lucide-react": "^0.468.0",
     "next": "^16.1.0",
+    "openid-client": "6.8.8",
     "pg": "^8.16.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.180.0",
-    "@upstash/redis": "1.36.4",
-    "openid-client": "6.8.8"
+    "three": "^0.180.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.15.0",
     "@types/react": "^19.2.0",

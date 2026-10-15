@@ -86,7 +86,7 @@ test('login binds state/nonce and PKCE verifier, issues only secure host cookies
   assert.equal(flow.start.headers.get('cache-control').includes('no-store'),true);
   const callbackResponse=await callback(controller,flow);
   assert.equal(callbackResponse.status,303);
-  assert.equal(callbackResponse.headers.get('location'),origin+'/');
+  assert.equal(callbackResponse.headers.get('location'),origin+'/?auth=signed-in');
   assert.ok(extract(callbackResponse,SESSION_COOKIE));
   assert.equal(p.calls[1].nonce,p.calls[0].nonce);
 });
@@ -136,7 +136,7 @@ test('session expiration and stale tokens are rejected without refresh or silent
   const cookie=extract(login,SESSION_COOKIE);
   now += 8*3600*1000+1;
   const session=await ctrl.session(request(origin+'/api/auth/owner/session','GET',{cookie}));
-  assert.equal(session.status,401);assert.ok(session.headers.get('set-cookie').includes('Max-Age=0'));
+  assert.equal(session.status,401);assert.equal(session.headers.get('set-cookie'),null);
 });
 test('rate limiting is enforced across instances with one store',async()=>{
   const store=memoryStore(),provider=makeProvider();
@@ -167,7 +167,7 @@ test('invalid Preview auth variables produce stable log-safe error codes without
     NCORE_AUTH_CSRF_SECRET:config.csrfSecret,
   };
   for(const [name,value,expectedCode] of [
-    ['NCORE_OWNER_AUTH_ORIGIN','https://neural.example.invalid/','OWNER_ORIGIN_HTTPS_REQUIRED'],
+    ['NCORE_OWNER_AUTH_ORIGIN','https://neural.example.invalid/path','OWNER_ORIGIN_PATH_NOT_ALLOWED'],
     ['NCORE_GOOGLE_CLIENT_ID','bad-client-id','GOOGLE_CLIENT_ID_INVALID'],
     ['NCORE_GOOGLE_CLIENT_SECRET','invalid','GOOGLE_CLIENT_SECRET_MISSING'],
     ['NCORE_GOOGLE_OWNER_SUB','someone@example.test','GOOGLE_OWNER_SUB_INVALID'],
