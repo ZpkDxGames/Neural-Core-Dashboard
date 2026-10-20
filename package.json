@@ -5,15 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "test:auth-ui": "playwright test"
+    "test:auth-ui": "playwright test",
+    "test:brain": "node --experimental-strip-types --test tests/brain/*.test.ts tests/brain/*.test.mjs",
+    "lint": "node scripts/lint-brain-tokens.mjs",
+    "test:vault": "node --test backend/v2/note.test.mjs backend/v2/vault.test.mjs backend/v2/api.test.mjs",
+    "test:vault:integration": "node --test backend/v2/integration.test.mjs"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.0",
-    "@react-three/fiber": "^9.3.0",
     "@upstash/redis": "1.39.0",
     "lucide-react": "^0.468.0",
     "next": "^16.1.0",
@@ -21,9 +23,13 @@
     "pg": "^8.16.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.180.0"
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "three": "^0.180.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "1.62.1",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.15.0",

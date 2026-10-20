@@ -1,87 +1,60 @@
-# Neural Core · Foundation Alpha (v0.1.0)
+# Neural Brain V2 — development candidate
 
-Independent, local-first personal knowledge network for ChatGPT, Claude and Gemini conversation archives. Designed for a free Vercel dashboard and an optional private PostgreSQL backend on an existing VPS.
+A local-first Next.js knowledge dashboard with an independently maintained PostgreSQL + Obsidian-compatible Markdown memory engine. This branch is a review candidate, not a production release.
 
-## What works today
+## Available in the dashboard
 
-- Dark, mobile-responsive Next.js dashboard.
-- Interactive WebGL 3D knowledge sphere (React Three Fiber), with pan-free orbit/zoom, pause/resume, node selection, category filtering and network search for imported content.
-- Clearly labeled **synthetic network** before any real data is imported.
-- Local JSON file import and IndexedDB persistence; no uploads when using the dashboard's Import button.
-- ChatGPT `conversations.json` parser using active conversation branches; Claude `chats.json` parser; normalized generic conversation JSON (including normalized Gemini conversations).
-- Conversation library, basic topic categorization, counts, summary and context-copy functionality.
-- Import/export/delete controls with opt-in local storage.
-- Optional *server-to-server* `/api/v1/ingest` route with a Bearer token and PostgreSQL schema; disabled unless both environment variables are configured.
-- Unit tests for archive parsing and graph integrity.
+- Overview, graph, knowledge library, agent workspace, sources, activity, and settings routes, with dark/light themes and responsive keyboard-accessible navigation.
+- ChatGPT active-branch, Claude, and normalized Generic/Gemini JSON import with preview and explicit storage consent. IndexedDB persistence, stable-ID export round trips, exact-count deletion and cited context copy remain local to the browser.
+- Bounded worker-based search and graph layout; lexical topic concepts retain exact source excerpts. These rules do not verify facts.
+- Default 2D Canvas graph, accessible list/hierarchy, and an explicitly selected lazy Three.js sphere with context-loss fallback and resource cleanup.
+- Safe Markdown AST preview, provenance views and tab-memory drafts. Synthetic note/conflict examples require explicit opt-in and remain labelled.
+- Existing Google owner session, CSRF, logout/retry and cross-tab behavior. Signing in does not enable synchronization.
 
-## What does not work yet
+## Independent memory engine
 
-- **No live capture or browser extension** (Phase 2).
-- **No Gemini Takeout parser**; no claim that Gemini exports contain complete conversations.
-- **No automatic shared brain/context injection across the AI sites**.
-- The local dashboard does not query PostgreSQL. The optional ingest API writes to the private database, but a full authenticated read API and owner login are pending.
-- No embeddings/LLM summaries, personality inference, background jobs or semantic search yet. Categories are rule-based heuristics, not psychological traits.
-- Demo graph nodes **are simulated** and never pretend to be real memories.
+`backend/v2` provides evidence-bearing proposals, scoped agent identities, immutable revisions, one-use owner review proofs, signed retrieval cursors, transactional outbox publication, external-edit conflicts, recovery, deduplication/consolidation and tombstones. Migration 003 is additive; 001/002 and existing v1/backup foundations are retained.
 
-## Run locally
+The V2 handler is **not bound to a listener**, is disabled by default and is not imported by the current private server. No browser gateway, remote synchronization or real agent integration is enabled. The old Vercel `/api/v1/ingest` route is absent. Do not place private database credentials or canary tokens in Vercel.
 
-Requirements: Node.js 22+ (recommended), npm, modern WebGL-enabled browser.
+## Local development and verification
 
-```bash
-npm install
-npm test
-npm run typecheck
+Use Node 22+ and the lockfile:
+
+```sh
+npm ci
+npm ci --prefix backend
 npm run dev
 ```
 
-Open http://localhost:3000. All client-side conversation imports remain only in that browser profile. No `.env` is required for local-first mode.
+Open http://localhost:3000. No environment file is needed for browser-local use. Browser archives require consent before storage; clearing browser data removes them. Exports remain under the user's control.
 
-## Deploy dashboard to Vercel
-
-1. Use the repository `ZpkDxGames/Neural-Core-Dashboard` and connect it to a new Vercel project. The repository is currently **public**; commit application source only and never conversation archives, database dumps or secrets.
-2. Select Next.js and the repository root. Build command: `npm run build`.
-3. Initially **do not set** `DATABASE_URL` or `CORE_INGEST_TOKEN` and **do not expose private conversation data**.
-4. Open the deployed page and import your archive locally; contents stay in that browser's IndexedDB rather than Vercel storage.
-5. The `.vercel.app` page itself is public unless protected; use Vercel protection and an owner login before building any server-side read/sync feature.
-
-## Optional PostgreSQL server-to-server ingest
-
-This is advanced scaffolding, **not cross-device dashboard sync**. Only configure when your server connectivity, authentication and TLS are correctly secured.
-
-```bash
-# On YOUR isolated PostgreSQL database, as the restricted Neural Core DB user:
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/001_init.sql
+```sh
+npm test
+npm run test:brain
+npm run test:vault
+npm run lint
+node scripts/check-parity.mjs
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:auth-ui
 ```
 
-Set `DATABASE_URL` and a new randomly generated 48+-character `CORE_INGEST_TOKEN` as Vercel **encrypted environment variables**. Never put them in `NEXT_PUBLIC_*`, git commits, URLs, browser localStorage, or extension configuration. The route supports up to 50 conversations / 500 KB per request. It is meant for a trusted server-side importer, not a public browser call. Rate limiting, verified identity, production TLS access to the private database and rotation are required before serious use.
+The original unit suite requires an isolated Redis instance for full coverage. Native backend/V2 integration tests require fresh disposable loopback PostgreSQL databases; follow the migration document and CI workflow. Never point tests at an existing or live database. The supported production build uses Webpack and a DOM-free Markdown entity decoder for workers.
 
-Example normalized payload (server-side only):
+## Review and activation
 
-```json
-{"conversations":[{"id":"test-1","provider":"generic","title":"Notes","messages":[{"role":"user","text":"Investigate rendering performance"}]}]}
-```
+- [Source drift and baseline](docs/v2/DRIFT_REPORT.md)
+- [Memory engine architecture](docs/v2/ARCHITECTURE.md)
+- [Migration and rollback](docs/v2/MIGRATIONS_AND_ROLLBACK.md)
+- [Dashboard architecture](docs/ui/ARCHITECTURE.md)
+- [Feature parity](docs/ui/PARITY_FINDINGS.md)
+- [Implementation and owner review items](docs/ui/IMPLEMENTATION_REPORT.md)
+- [Verification and performance](docs/ui/TEST_REPORT.md)
 
-Only submit this through an authenticated backend. The database SQL defines the eventual evidence-backed knowledge graph, but the graph ingestion pipeline itself is planned.
+Backend workstream: `development/neural-brain-v2-hybrid`, stacked on draft #6. Dashboard: `development/neural-brain-v2-ui`, stacked on the backend. Development drafts must not be merged or deployed without a separate owner decision.
 
-## Privacy and security assumptions
+Production activation requires approved private ingress, owner proof issuance, scoped real credentials, capacity and retention policy, encrypted paired database/vault restore certification, live auth testing, and staged rollout/rollback verification. No live infrastructure operation is part of this candidate.
 
-The dashboard's **Import** file input reads JSON directly into browser memory and IndexedDB; no capture or third-party upload is performed by app code. Do not import secrets from shared computers. Browser extensions, browser backup and device compromise can still expose local data. Avoid indexing private messages until a full sign-in and retention model exists.
-
-Vercel Functions are ephemeral; no permanent file storage should be assumed. The optional backend database is intentionally separate from Minecraft/PlexonPanel state.
-
-## Next phases
-
-- **Phase 1b**: owner authentication, secure backend read/ingest APIs, RLS/authorization and encryption-at-rest policy, migration scripts, backups, cloud-synchronized query views.
-- **Phase 2**: permissioned browser extension, platform adapters, incremental/deduplicated capture and manual context insertion.
-- **Phase 3**: local embeddings, evidence-backed nodes and edges, inference approvals, provenance, anomaly detection and scalable 3D clustering.
-
-## Validation status
-
-**GitHub Actions passed** dependency installation, 6 unit tests, TypeScript typechecking and `next build` on Node 22 (verification run #38408249711, 2026-10-13). Interactive browser/WebGL certification and real synchronization remain pending. See `docs/BUILD_STATUS.md`.
-
-## Repository policy
-
-- Source: https://github.com/ZpkDxGames/Neural-Core-Dashboard
-- Release: **0.1.0-alpha.1** (experimental foundation; not build-certified).
-- `main` is the reference branch. Development happens in `development/*` branches with CI and pull requests.
-- The website is not an authenticated private workspace; imported data stays in the current browser only until a secure server backend exists.
+Semantic/vector search, browser capture, automatic platform context injection, Gemini Takeout, live agent synchronization, independent security review and real-device/screen-reader certification remain outside the verified candidate. Never automatically promote agent text or frontmatter claims into established facts.

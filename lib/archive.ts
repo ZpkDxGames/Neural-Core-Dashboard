@@ -97,6 +97,6 @@ export function parseArchive(raw: unknown): ImportResult {
     if (result) conversations.push(result);
   }
   if (!conversations.length) throw Error('No readable conversations found. Gemini Takeout Activity is not yet supported; use normalized JSON.');
-  const provider = detected === 'generic' ? conversations[0].provider : detected;
+  const provider = detected === 'generic' ? conversations[0]!.provider : detected;
   return {provider,conversations,ignored: arr.length - conversations.length,warning: detected==='generic'?'Generic conversation schema; verify fields before use.':undefined};
 }

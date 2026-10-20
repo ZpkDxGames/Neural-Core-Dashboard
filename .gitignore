@@ -9,3 +9,8 @@ node_modules/
 coverage/
 playwright-report/
 test-results/
+
+# Full synthetic UI evidence is retained in the review ZIP and CI artifact.
+docs/ui/evidence/shots/
+docs/ui/evidence/playwright-results.json
+docs/ui/evidence/full-playwright-results.json

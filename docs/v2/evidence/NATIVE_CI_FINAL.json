@@ -1,0 +1,29 @@
+{
+  "commit": "be98d060c604791ca75da7efd434218a6c686fac",
+  "tree": "c8c459661a1fedadb3e42d39f36f478aa238c912",
+  "runId": 39500377649,
+  "jobId": 118896048401,
+  "url": "https://github.com/ZpkDxGames/Neural-Core-Dashboard/actions/runs/39500377649",
+  "postgres": "16",
+  "result": "success",
+  "tests": {
+    "originalUnitAuthRedis": 48,
+    "originalBackend": 13,
+    "vaultUnitFsApi": 10,
+    "vaultIntegration": 13,
+    "authBrowser": 9,
+    "total": 93,
+    "fail": 0,
+    "skip": 0
+  },
+  "otherChecks": [
+    "typecheck",
+    "optimized build",
+    "SQL backup restore",
+    "backup-script contract",
+    "client credential-identifier scan",
+    "disabled owner endpoints",
+    "removed ingest endpoint 404"
+  ],
+  "liveInfrastructureAccess": false
+}
