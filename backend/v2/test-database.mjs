@@ -28,6 +28,10 @@ export async function testDatabase(){
   await admin.query("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='neuralcore_api') THEN CREATE ROLE neuralcore_api LOGIN PASSWORD 'synthetic-v2-only'; END IF; END $$");
   const initial=await readFile(new URL('../../db/001_init.sql',import.meta.url),'utf8');
   if(process.env.NCORE_V2_PGLITE_PACKAGE){const result=await admin.query(initial);void result;}else await admin.query(initial);
-  await applyMigration(admin);await applyVaultMigration(admin);
+  await applyMigration(admin);
+  let rejected=false;
+  try{await applyVaultMigration({query:(sql,args)=>{if(sql.startsWith('INSERT INTO schema_migrations'))throw Error('SYNTHETIC_COMMIT_FAILURE');return admin.query(sql,args);}});}catch(e){if(e.message!=='SYNTHETIC_COMMIT_FAILURE')throw e;rejected=true;}
+  if(!rejected||(await admin.query("SELECT to_regclass('public.vault_notes') AS present")).rows[0].present!==null)throw Error('V2 DDL did not roll back after a synthetic commit failure');
+  await applyVaultMigration(admin);
   return {admin,pool,close,runtime};
 }

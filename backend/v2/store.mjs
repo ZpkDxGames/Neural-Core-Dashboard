@@ -60,6 +60,10 @@ export class MemoryEngine {
       await db.query('SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))',[p.ownerId+':'+p.principalId,key]);
       const prior=await db.query('SELECT * FROM vault_proposals WHERE owner_id=$1 AND principal_id=$2 AND idempotency_key=$3',[p.ownerId,p.principalId,key]);
       if(prior.rows.length){if(prior.rows[0].payload_hash.trim()!==fingerprint)fail('IDEMPOTENCY_CONFLICT',409);return {proposalId:prior.rows[0].proposal_id,noteId:prior.rows[0].note_id,state:prior.rows[0].state,replayed:true};}
+      await db.query('SELECT pg_advisory_xact_lock(hashtext($1),104)',[p.ownerId]);
+      const ownerQueue=(await db.query("SELECT count(*)::int AS n FROM (SELECT 1 FROM vault_proposals WHERE owner_id=$1 AND state IN ('proposed','conflict') LIMIT 1000) q",[p.ownerId])).rows[0].n;
+      const agentQueue=(await db.query("SELECT count(*)::int AS n FROM (SELECT 1 FROM vault_proposals WHERE owner_id=$1 AND principal_id=$2 AND state IN ('proposed','conflict') LIMIT 100) q",[p.ownerId,p.principalId])).rows[0].n;
+      if(ownerQueue>=1000||agentQueue>=100)fail('PROPOSAL_QUEUE_FULL',429);
       await this.validateEvidence(db,p,payload);
       if(noteId){
         const n=await db.query('SELECT * FROM vault_notes WHERE note_id=$1 AND owner_id=$2 FOR UPDATE',[noteId,p.ownerId]);
@@ -92,13 +96,16 @@ export class MemoryEngine {
       if(expectedRevision!==proposal.base_revision)fail('REVISION_CONFLICT',409);
       await db.query('SELECT pg_advisory_xact_lock(hashtext($1),103)',[proposal.note_id]);
       let n=(await db.query('SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2 FOR UPDATE',[p.ownerId,proposal.note_id])).rows[0];
-      if(n&&(n.deleted_at||n.current_revision!==expectedRevision||(!proposal.expected_file_hash&&n.published_revision!==expectedRevision)))fail('REVISION_CONFLICT',409);
+      if(decision!=='reject'&&n&&(n.deleted_at||n.current_revision!==expectedRevision||(!proposal.expected_file_hash&&n.published_revision!==expectedRevision)))fail('REVISION_CONFLICT',409);
       if(!n&&expectedRevision!==0)fail('REVISION_CONFLICT',409);
       await this.consumeProof(db,p,proof,proposalId,expectedRevision);
       if(decision==='reject'){
         await db.query("UPDATE vault_proposals SET state='rejected',reviewed_at=now() WHERE proposal_id=$1",[proposalId]);
         await this.audit(db,p,'review',proposalId,'rejected');return {proposalId,state:'rejected'};
       }
+      await db.query('SELECT pg_advisory_xact_lock(hashtext($1),105)',[p.ownerId]);
+      const queue=(await db.query("SELECT count(*)::int AS n FROM (SELECT 1 FROM vault_outbox WHERE owner_id=$1 AND state IN ('pending','failed','conflict') LIMIT 1000) q",[p.ownerId])).rows[0].n;
+      if(queue>=1000)fail('PUBLICATION_QUEUE_FULL',429);
       await this.validateEvidence(db,p,payload);
       if(!n){
         // An exact duplicate must be consolidated explicitly; never auto-promote it.
@@ -127,6 +134,9 @@ export class MemoryEngine {
       await db.query("INSERT INTO vault_outbox(event_id,owner_id,note_id,revision,operation,expected_hash) VALUES($1,$2,$3,$4,'publish',$5)",[eventId,p.ownerId,n.note_id,revision,proposal.expected_file_hash??n.published_hash]);
       await this.audit(db,p,'review',proposalId,decision);
       return {proposalId,noteId:n.note_id,revision,eventId,state:'pending'};
+    }).catch(async error=>{
+      if(error instanceof BrainError&&error.code==='REVISION_CONFLICT')await this.tx(async db=>{const p=await this.authorize(db,identity,'review');await db.query("UPDATE vault_proposals SET state='conflict' WHERE owner_id=$1 AND proposal_id=$2 AND state='proposed'",[p.ownerId,proposalId]);});
+      throw error;
     });
   }
   encodeCursor(data){const value=Buffer.from(JSON.stringify(data)).toString('base64url');return value+'.'+createHmac('sha256',this.cursorKey).update(value).digest('base64url');}
@@ -229,18 +239,19 @@ export class MemoryEngine {
   }
   async status(identity){
     return this.tx(async db=>{const p=await this.authorize(db,identity,'read');
-      const r=await db.query(`SELECT state,count(*)::int AS count,max(committed_at) AS last_confirmed_at FROM vault_outbox WHERE owner_id=$1 GROUP BY state`,[p.ownerId]);
+      const r=await db.query(`SELECT o.state,count(*)::int AS count,max(o.committed_at) AS last_confirmed_at FROM vault_outbox o JOIN vault_notes n ON n.note_id=o.note_id
+        WHERE o.owner_id=$1 AND (cardinality($2::text[])=0 OR n.note_type=ANY($2)) GROUP BY o.state`,[p.ownerId,types(p)]);
       return {publication:r.rows,confirmedAt:new Date().toISOString(),gateway:'internal-only',remoteSynchronization:false};
     });
   }
   async proposals(identity,{limit=25}={}){
     if(!Number.isInteger(limit)||limit<1||limit>50)fail('INVALID_LIMIT',400);
     return this.tx(async db=>{const p=await this.authorize(db,identity,'read');
-      const rows=await db.query("SELECT proposal_id,note_id,principal_id,base_revision,payload,state,duplicate_of,created_at FROM vault_proposals WHERE owner_id=$1 AND (cardinality($2::text[])=0 OR payload->>'type'=ANY($2)) ORDER BY created_at,proposal_id LIMIT $3",[p.ownerId,types(p),limit+1]);
+      const rows=await db.query("SELECT proposal_id,note_id,principal_id,base_revision,payload,state,duplicate_of,created_at FROM vault_proposals WHERE owner_id=$1 AND (cardinality($2::text[])=0 OR payload->>'type'=ANY($2)) AND ($4::boolean OR principal_id=$5) ORDER BY created_at,proposal_id LIMIT $3",[p.ownerId,types(p),limit+1,['owner','maintainer'].includes(p.role),p.principalId]);
       return {items:rows.rows.slice(0,limit),partial:rows.rows.length>limit};
     });
   }
-  async agents(identity){return this.tx(async db=>{const p=await this.authorize(db,identity,'read');return (await db.query('SELECT principal_id,display_name,kind,role,scopes,disabled_at FROM vault_principals WHERE owner_id=$1 ORDER BY principal_id LIMIT 50',[p.ownerId])).rows;});}
+  async agents(identity){return this.tx(async db=>{const p=await this.authorize(db,identity,'read');if(p.role!=='owner')fail('ROLE_FORBIDDEN',403);return (await db.query('SELECT principal_id,display_name,kind,role,scopes,disabled_at FROM vault_principals WHERE owner_id=$1 ORDER BY principal_id LIMIT 50',[p.ownerId])).rows;});}
   async exportPage(identity,options){await this.tx(db=>this.authorize(db,identity,'export'));const page=await this.list(identity,{...options,limit:1});
     return {...page,items:await Promise.all(page.items.map(n=>this.get(identity,n.noteId)))};
   }

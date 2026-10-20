@@ -6,7 +6,7 @@ const note={title:'Synthetic note',body:'# Synthetic\n\nA [[Related|alias]] refe
 const text=()=>serializeNote({noteId:id,revision:1,payload:note,createdAt:'2026-10-20T00:00:00Z',updatedAt:'2026-10-20T00:00:00Z',agentOrigin:'synthetic'});
 test('canonical Markdown round trip keeps stable identity, canonical UTF-8 hash and wikilinks',()=>{
   const serialized=text(),parsed=parseMarkdown(serialized);assert.equal(parsed.meta.note_id,id);assert.equal(parsed.meta.state,'proposed');
-  assert.equal(parsed.hash,hash(serialized));assert.equal(parseMarkdown(serialized.replace(/\n/g,'\r\n')).hash,parsed.hash);
+  assert.equal(parsed.hash,hash(serialized));assert.deepEqual(parsed.meta.aliases,['Synthetic note']);assert.equal(parseMarkdown(serialized.replace(/\n/g,'\r\n')).hash,parsed.hash);
   assert.deepEqual(wikilinks(note.body),[{title:'Related',label:'alias',embedded:false}]);assert.equal(wikilinks('```\n[[code]]\n```').length,0);
 });
 test('YAML rejects aliases, tags, unknown keys, duplicate keys and forged identity',()=>{

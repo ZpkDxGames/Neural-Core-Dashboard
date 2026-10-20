@@ -12,7 +12,7 @@ Approval locks the note and appends its immutable revision plus outbox event in 
 
 ## Notes and reconciliation
 
-`contracts.ts` defines versioned internal contracts. Notes use stable UUIDs and UUID filenames; titles do not determine identity. The YAML subset accepts scalar strings/integers and string arrays (flow or block-list syntax), rejects aliases/tags/objects/unknown or duplicate keys, and bounds field/file/body sizes. Metadata is self-reported; `state: verified` is never an owner decision. Wikilinks are parsed without transclusion or executing content. Only explicit, evidence-bearing typed relations enter the authoritative graph; unresolved title wikilinks remain references until disambiguated by an owner proposal.
+`contracts.ts` defines versioned internal contracts. Notes use stable UUIDs and UUID filenames; titles do not determine identity. Safe Obsidian `aliases` expose the display title for ordinary title wikilinks while UUID filenames remain stable. Aliases are untrusted data, never YAML aliases/anchors or a verification mechanism. The YAML subset accepts scalar strings/integers and string arrays (flow or block-list syntax), rejects aliases/tags/objects/unknown or duplicate keys, and bounds field/file/body sizes. Metadata is self-reported; `state: verified` is never an owner decision. Wikilinks are parsed without transclusion or executing content. Only explicit, evidence-bearing typed relations enter the authoritative graph; unresolved title wikilinks remain references until disambiguated by an owner proposal.
 
 Owner-scoped reconciliation records changed, malformed, missing, renamed, orphan and tombstoned files. Body edits become proposals carrying the observed file hash, not implicit facts. An owner may approve an external edit as a new revision, cancelling a superseded pending publication. `repair()` permits an owner with a separate proof to retry a conflicted/failed publication against the newly observed file hash. Renames are surfaced for review; the implementation keeps UUID canonical filenames rather than silently changing identity or importing unknown files.
 
@@ -20,7 +20,9 @@ The directory must be private and exclusively owned by the service/owner. Symlin
 
 ## Retrieval, permissions and budgets
 
-Every SQL read filters owner and optional `type:*` scopes. API roles cannot create principals, insert owner proofs or mutate immutable revisions. No RLS multitenancy claim is made: this remains a private single-owner service, with application-enforced scopes and separate credential boundaries. A future public/multitenant gateway requires independent review.
+Every SQL read filters owner and optional `type:*` scopes. API roles cannot create principals, insert owner proofs or mutate immutable revisions. Pending proposals are capped at 100 per principal and 1,000 per owner; publication backlog is capped at 1,000. Stale proposals retain a durable conflict state and can be explicitly rejected without changing the winning revision.
+
+No RLS multitenancy claim is made: this remains a private single-owner service, with application-enforced scopes and separate credential boundaries. A future public/multitenant gateway requires independent review.
 
 PostgreSQL full-text GIN projection uses weighted title/tags and body, deterministic score/UUID ordering, signed query/principal-scoped keyset cursors and a maximum 50-row page. Graph breadth-first expansion is bounded to depth 3, 300 nodes and 900 evidence-bearing edges. The response budget is 256 KiB; over-budget responses fail explicitly. The engine uses no embeddings, vector extension, model calls, tools or background inference. All imported/model text is inert, untrusted content.
 

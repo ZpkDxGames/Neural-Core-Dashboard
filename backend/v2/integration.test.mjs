@@ -2,8 +2,8 @@ import test,{before,after} from 'node:test';import assert from 'node:assert/stri
 import {randomBytes,randomUUID} from 'node:crypto';import {mkdtemp,rm,writeFile,rename,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {testDatabase} from './test-database.mjs';import {MemoryEngine} from './store.mjs';import {FileVault} from './vault.mjs';import {VaultWorker} from './worker.mjs';
 import {hash} from './note.mjs';import {applyVaultMigration} from './migrate.mjs';import {checkpoint,verifyCheckpoint} from './checkpoint.mjs';
-let db,engine,vault,worker,root,owner,agent,viewer,other,typed;
-const tokens={owner:'nbv2_'+'a'.repeat(43),agent:'nbv2_'+'b'.repeat(43),viewer:'nbv2_'+'c'.repeat(43),other:'nbv2_'+'d'.repeat(43),typed:'nbv2_'+'e'.repeat(43)};
+let db,engine,vault,worker,root,owner,agent,viewer,other,typed,agent2;
+const tokens={owner:'nbv2_'+'a'.repeat(43),agent:'nbv2_'+'b'.repeat(43),viewer:'nbv2_'+'c'.repeat(43),other:'nbv2_'+'d'.repeat(43),typed:'nbv2_'+'e'.repeat(43),agent2:'nbv2_'+'f'.repeat(43)};
 const note=(body='Synthetic memory '+randomUUID(),extra={})=>({title:'Synthetic project',body,type:'project',tags:['synthetic'],evidence:[{kind:'conversation',conversationId:'chatgpt:synthetic-v2',messageId:'m1'}],relations:[],...extra});
 async function proof(subject,revision,principal=owner){const value=randomBytes(32).toString('base64url');await db.admin.query('INSERT INTO vault_review_grants(proof_hash,owner_id,principal_id,subject_id,expected_revision,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval \'2 minutes\')',[hash(value),principal.ownerId,principal.principalId,subject,revision]);return value;}
 async function proposed(n=note(),author=agent,options={}){return engine.submit(author,{note:n,...options},randomUUID());}
@@ -12,10 +12,10 @@ async function published(n=note(),author=agent){const result=await accepted(n,au
 before(async()=>{
   db=await testDatabase();engine=new MemoryEngine(db.pool,{cursorKey:'synthetic-cursor-secret-key-with-32-bytes'});
   root=await mkdtemp(join(tmpdir(),'synthetic-v2-integration-'));vault=new FileVault(root);await vault.initialise();worker=new VaultWorker(engine,vault,{retryDelayMs:0});
-  for(const [name,role,ownerId,scopes] of [['owner','owner','owner',['read','propose','review','delete','export']],['agent','contributor','owner',['read','propose']],['viewer','viewer','owner',['read']],['other','owner','synthetic-other',['read','propose','review','delete','export']],['typed','contributor','owner',['read','propose','type:reference']]]){
+  for(const [name,role,ownerId,scopes] of [['owner','owner','owner',['read','propose','review','delete','export']],['agent','contributor','owner',['read','propose']],['viewer','viewer','owner',['read']],['other','owner','synthetic-other',['read','propose','review','delete','export']],['typed','contributor','owner',['read','propose','type:reference']],['agent2','contributor','owner',['read','propose']]]){
     await db.admin.query('INSERT INTO vault_principals(principal_id,owner_id,display_name,kind,role,scopes,token_hash) VALUES($1,$2,$3,$4,$5,$6,$7)',[randomUUID(),ownerId,'SYNTH-'+name,role==='owner'?'owner':'agent',role,scopes,hash(tokens[name])]);
   }
-  [owner,agent,viewer,other,typed]=await Promise.all(['owner','agent','viewer','other','typed'].map(k=>engine.authenticate(tokens[k])));
+  [owner,agent,viewer,other,typed,agent2]=await Promise.all(['owner','agent','viewer','other','typed','agent2'].map(k=>engine.authenticate(tokens[k])));
   await db.admin.query("INSERT INTO conversations(id,source_id,title,owner_id) VALUES('chatgpt:synthetic-v2','chatgpt','Synthetic source','owner')");
   await db.admin.query("INSERT INTO messages(conversation_id,message_id,role,body) VALUES('chatgpt:synthetic-v2','m1','user','Synthetic evidence for PostgreSQL architecture and testing.')");
 });
@@ -35,6 +35,7 @@ test('V2 additive migration checksum, least privilege and immutable revisions',a
 test('agent scopes, revoked tokens, forged roles and evidence validation fail closed',async()=>{
   await assert.rejects(()=>engine.authenticate('bad'),e=>e.code==='UNAUTHORIZED');
   await assert.rejects(()=>proposed(note(),viewer),e=>e.code==='ROLE_FORBIDDEN');
+  await assert.rejects(()=>engine.agents(agent),e=>e.code==='ROLE_FORBIDDEN');
   await assert.rejects(()=>proposed(note(),typed),e=>e.code==='ROLE_FORBIDDEN');
   await assert.rejects(()=>proposed(note('Synthetic',{evidence:[{kind:'manual',reason:'Agent invents manual approval'}]})),e=>e.code==='MANUAL_PROVENANCE_OWNER_REQUIRED');
   await assert.rejects(()=>proposed(note('Synthetic',{evidence:[{kind:'conversation',conversationId:'private-other-source',messageId:'m1'}]})),e=>e.code==='MISSING_EVIDENCE');
@@ -56,10 +57,12 @@ test('idempotent proposals never self-verify and require single-use owner review
 });
 test('two competing agent revisions produce one owner commit and one revision conflict',async()=>{
   const original=await published();const options={noteId:original.noteId,baseRevision:1};
-  const [a,b]=await Promise.all([proposed(note(),agent,options),proposed(note(),agent,options)]);
+  const [a,b]=await Promise.all([proposed(note(),agent,options),proposed(note(),agent2,options)]);
   const pa=await proof(a.proposalId,1),pb=await proof(b.proposalId,1);
   const results=await Promise.allSettled([engine.review(owner,a.proposalId,{decision:'verify',expectedRevision:1,proof:pa}),engine.review(owner,b.proposalId,{decision:'verify',expectedRevision:1,proof:pb})]);
   assert.equal(results.filter(x=>x.status==='fulfilled').length,1);assert.equal(results.find(x=>x.status==='rejected').reason.code,'REVISION_CONFLICT');
+  const loser=results[0].status==='rejected'?a:b;assert.equal((await db.admin.query('SELECT state FROM vault_proposals WHERE proposal_id=$1',[loser.proposalId])).rows[0].state,'conflict');
+  await engine.review(owner,loser.proposalId,{decision:'reject',expectedRevision:1,proof:await proof(loser.proposalId,1)});
   assert.equal((await engine.get(owner,original.noteId)).revision,1);await worker.once();assert.equal((await engine.get(owner,original.noteId)).revision,2);
 });
 test('durable outbox recovers all file/SQL crash windows and double worker replay',async()=>{
@@ -103,11 +106,16 @@ test('indexed retrieval, signed cursors, owner scopes, graph evidence and index 
   await assert.rejects(()=>engine.list(other,{cursor:page.nextCursor}),e=>e.code==='INVALID_CURSOR');
   await assert.rejects(()=>engine.get(other,a.noteId),e=>e.code==='NOT_FOUND');assert.equal((await engine.list(other)).items.length,0);
   assert.equal((await engine.list(typed)).items.length,0);await assert.rejects(()=>engine.get(typed,a.noteId),e=>e.code==='ROLE_FORBIDDEN');
+  assert.deepEqual((await engine.status(typed)).publication,[]);
   await db.admin.query('DELETE FROM vault_search_documents WHERE note_id=$1',[a.noteId]);assert.equal((await engine.list(owner,{q:'postgresql'})).items.some(n=>n.noteId===a.noteId),false);
   await worker.rebuildIndex(owner);assert.equal((await engine.list(owner,{q:'postgresql'})).items.some(n=>n.noteId===a.noteId),true);
   const d=await proposed(note('Synthetic lexical postgresql '+randomUUID()));void d;
   const same=(await engine.get(owner,a.noteId)).body,duplicate=await proposed(note(same));assert.equal(duplicate.duplicateOf,a.noteId);
   await assert.rejects(async()=>engine.review(owner,duplicate.proposalId,{decision:'verify',expectedRevision:0,proof:await proof(duplicate.proposalId,0)}),e=>e.code==='DUPLICATE_NOTE');
+});
+test('proposal queue backpressure rejects excess agent work without allocating revisions',async()=>{
+  await db.admin.query("INSERT INTO vault_proposals(proposal_id,owner_id,principal_id,base_revision,payload,payload_hash,idempotency_key) SELECT gen_random_uuid(),'owner',$1::uuid,0,$2::jsonb,repeat('a',64),'synth-budget-'||i FROM generate_series(1,100) i",[agent2.principalId,JSON.stringify(note())]);
+  try{await assert.rejects(()=>proposed(note(),agent2),e=>e.code==='PROPOSAL_QUEUE_FULL');}finally{await db.admin.query("DELETE FROM vault_proposals WHERE idempotency_key LIKE 'synth-budget-%'");}
 });
 test('paired checkpoint hashes reject missing/changed vault and mismatched snapshot',async()=>{
   const manifest=await checkpoint(engine,vault,owner,{snapshotId:'synthetic-snapshot-001',quiesced:true});assert.equal(verifyCheckpoint(manifest,manifest),true);
