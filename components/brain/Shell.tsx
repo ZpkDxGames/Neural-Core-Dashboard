@@ -83,6 +83,7 @@ export function Shell({ children }: { children: ReactNode }) {
     router = useRouter(),
     brain = useBrain(),
     [palette, setPalette] = useState(false),
+    [interactive, setInteractive] = useState(false),
     [query, setQuery] = useState(""),
     [more, setMore] = useState(false),
     [connection, setConnection] = useState(false),
@@ -114,6 +115,7 @@ export function Shell({ children }: { children: ReactNode }) {
       }
     };
     addEventListener("keydown", onKey);
+    setInteractive(true);
     return () => removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => {
@@ -176,9 +178,10 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.title = current.label + " · Neural Brain";
     setMore(false);
-    const frame = requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>("main h1")?.focus(),
-    );
+    const frame = requestAnimationFrame(() => {
+      if (!document.querySelector("dialog[open]"))
+        document.querySelector<HTMLElement>("main h1")?.focus();
+    });
     return () => cancelAnimationFrame(frame);
   }, [pathname, current.label]);
   function go(href: string) {
@@ -215,6 +218,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div
       className="nb-shell"
       data-testid="nb-shell"
+      data-interactive={interactive}
       data-conn="sync.local-only"
     >
       <a href="#main" className="nb-skip">

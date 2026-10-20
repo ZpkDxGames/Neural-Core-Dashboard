@@ -94,28 +94,26 @@ for (const theme of ["dark", "light"])
         if (state === "conflict")
           await page.getByTestId("nb-conflict-demo").click();
         if (state === "consent") {
-          await page
-            .getByTestId("nb-import-file")
-            .setInputFiles({
-              name: "SYNTH-example.json",
-              mimeType: "application/json",
-              buffer: Buffer.from(
-                JSON.stringify([
-                  {
-                    id: "synth-preview-1",
-                    provider: "generic",
-                    title: "SYNTH source preview",
-                    messages: [
-                      {
-                        id: "synth-m1",
-                        role: "user",
-                        text: "Synthetic private memory planning.",
-                      },
-                    ],
-                  },
-                ]),
-              ),
-            });
+          await page.getByTestId("nb-import-file").setInputFiles({
+            name: "SYNTH-example.json",
+            mimeType: "application/json",
+            buffer: Buffer.from(
+              JSON.stringify([
+                {
+                  id: "synth-preview-1",
+                  provider: "generic",
+                  title: "SYNTH source preview",
+                  messages: [
+                    {
+                      id: "synth-m1",
+                      role: "user",
+                      text: "Synthetic private memory planning.",
+                    },
+                  ],
+                },
+              ]),
+            ),
+          });
           await expect(
             page.getByTestId("nb-consent-local-storage"),
           ).toBeVisible();
@@ -166,13 +164,11 @@ test("non-happy states, forced colors, reduced motion and keyboard focus capture
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await page.goto("/sources?tab=imports");
-  await page
-    .getByTestId("nb-import-file")
-    .setInputFiles({
-      name: "SYNTH-invalid.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{invalid"),
-    });
+  await page.getByTestId("nb-import-file").setInputFiles({
+    name: "SYNTH-invalid.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{invalid"),
+  });
   await expect(page.locator("[data-state=error][role=alert]")).toContainText(
     "Nothing has been saved",
   );
@@ -205,6 +201,10 @@ test("non-happy states, forced colors, reduced motion and keyboard focus capture
     path: "docs/ui/evidence/shots/states/zoom-equivalent.dark.640.png",
     fullPage: true,
   });
+  await expect(page.getByTestId("nb-shell")).toHaveAttribute(
+    "data-interactive",
+    "true",
+  );
   await page.keyboard.press("Control+k");
   await expect(page.getByTestId("nb-palette-input")).toBeFocused();
   await page.screenshot({

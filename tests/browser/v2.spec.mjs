@@ -237,14 +237,12 @@ test("J4: synthetic conflict comparison is inert, accessible and cannot approve 
   page,
 }) => {
   await page.goto("/agents?tab=conflicts");
-  const consolidation = page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("rowheader", {
-        name: "Consolidate duplicates",
-        exact: true,
-      }),
-    });
+  const consolidation = page.getByRole("row").filter({
+    has: page.getByRole("rowheader", {
+      name: "Consolidate duplicates",
+      exact: true,
+    }),
+  });
   await expect(consolidation).toBeVisible();
   expect(await consolidation.getByRole("cell").allTextContents()).toEqual([
     "No",
@@ -344,6 +342,10 @@ test("keyboard palette, theme preference, 320px reflow and forced colors", async
   page,
 }) => {
   await page.goto("/");
+  await expect(page.getByTestId("nb-shell")).toHaveAttribute(
+    "data-interactive",
+    "true",
+  );
   await page.keyboard.press("Control+k");
   await expect(page.getByTestId("nb-palette-input")).toBeFocused();
   await page.getByTestId("nb-palette-input").fill("Settings");
