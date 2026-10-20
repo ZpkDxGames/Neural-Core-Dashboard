@@ -36,9 +36,11 @@ test("Markdown XSS corpus renders inertly with zero image or external requests",
   await page.goto(
     "/library/note/550e8400-e29b-41d4-a716-446655440000?demo=1&tab=edit",
   );
-  for (const source of corpus) {
-    await page.getByTestId("nb-editor-body").fill(source);
+  for (const [index, source] of corpus.entries()) {
+    const marker = `SYNTH-CORPUS-${index}`;
+    await page.getByTestId("nb-editor-body").fill(source + "\n\n" + marker);
     const preview = page.getByTestId("nb-markdown");
+    await expect(preview).toContainText(marker);
     await expect(preview).toHaveAttribute("aria-busy", "false");
     expect(
       await preview.locator("script,iframe,img,style,form,svg,math").count(),

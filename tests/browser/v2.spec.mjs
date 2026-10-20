@@ -20,13 +20,11 @@ export const archive = Array.from({ length: 3 }, (_, i) => ({
 }));
 async function importPreview(page, raw = archive) {
   await page.goto("/sources?tab=imports");
-  await page
-    .getByTestId("nb-import-file")
-    .setInputFiles({
-      name: "synthetic-chatgpt.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(raw)),
-    });
+  await page.getByTestId("nb-import-file").setInputFiles({
+    name: "synthetic-chatgpt.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(raw)),
+  });
   await expect(page.getByTestId("nb-consent-local-storage")).toBeVisible();
 }
 async function storedCount(page) {
@@ -121,13 +119,11 @@ test("J1 F01 F02 F03: preview, consent, persistence, export round trip and exact
   const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
   expect(exported.conversations).toHaveLength(3);
   expect(exported.conversations[0].id).toMatch(/^chatgpt:/);
-  await page
-    .getByTestId("nb-import-file")
-    .setInputFiles({
-      name: "synthetic-roundtrip.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(exported)),
-    });
+  await page.getByTestId("nb-import-file").setInputFiles({
+    name: "synthetic-roundtrip.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(exported)),
+  });
   await page.getByTestId("nb-consent-grant").click();
   await expect(page.getByTestId("nb-state-success")).toBeVisible();
   expect(await storedCount(page)).toBe(3);
@@ -241,6 +237,21 @@ test("J4: synthetic conflict comparison is inert, accessible and cannot approve 
   page,
 }) => {
   await page.goto("/agents?tab=conflicts");
+  const consolidation = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("rowheader", {
+        name: "Consolidate duplicates",
+        exact: true,
+      }),
+    });
+  await expect(consolidation).toBeVisible();
+  expect(await consolidation.getByRole("cell").allTextContents()).toEqual([
+    "No",
+    "No",
+    "No",
+    "Yes",
+  ]);
   await page.getByTestId("nb-conflict-demo").click();
   await expect(page.getByTestId("nb-diff")).toContainText("Added:");
   await expect(page.getByTestId("nb-switch-resolve-conflict")).toHaveAttribute(

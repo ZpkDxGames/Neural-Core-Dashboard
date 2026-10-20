@@ -176,10 +176,10 @@ export function Agents({ tab = "review" }: { tab?: string }) {
                 ["Read permitted notes", "Yes", "Yes", "Yes", "Yes"],
                 ["Propose notes and relations", "No", "Yes", "Yes", "Yes"],
                 [
-                  "Resolve duplicates under owner policy",
+                  "Consolidate duplicates",
                   "No",
                   "No",
-                  "Yes",
+                  "No",
                   "Yes",
                 ],
                 ["Mark a fact verified", "No", "No", "No", "Yes"],
