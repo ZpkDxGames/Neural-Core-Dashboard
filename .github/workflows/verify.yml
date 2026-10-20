@@ -93,7 +93,7 @@ jobs:
         run: |
           mkdir -p test-results
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_v2_benchmark_test OWNER postgres;"
-          node backend/v2/benchmark.mjs test-results/native-performance.json
+          node backend/v2/benchmark.mjs docs/ui/evidence/native-performance.json
       - run: npm run typecheck
       - run: npm run build
       - name: Install isolated browser test runtime
