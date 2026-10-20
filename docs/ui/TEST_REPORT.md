@@ -1,6 +1,6 @@
 # Verification report — development candidate
 
-The final complete browser run is in progress. All results below refer to tests actually executed; pending checks are not certified.
+The final complete production-build browser run passed all 141 cases, with zero failures or skips in 4.4 minutes. Results below refer to tests actually executed. Native combined-candidate CI is attached to the dashboard draft; backend-native results are pinned below.
 
 | Check | Observed result |
 | --- | --- |
@@ -16,8 +16,10 @@ The final complete browser run is in progress. All results below refer to tests 
 | Locked dependency audit | 0 known advisories |
 | Earlier complete browser pass | 137 passed / 1 timed-out axe audit (138 cases); timed-out case passed a 1.2 s targeted rerun |
 | New controlled protocol + software GPU checks | 3 passed; no production fake adapter |
-| Final combined 141-case browser run | pending |
+| Final combined 141-case browser run | 141 passed, 0 failed, 0 skipped; 4.4 minutes |
 
 The first visual matrix found link affordance and selected-row contrast issues; both were corrected without disabling axe rules. Final matrix captures are regenerated. Full matrices/raw Playwright results are included in the downloadable review archive and CI artifacts; selected PNGs are committed for review.
 
 See browser-performance.json, software-gpu.json, the baseline metrics and backend scale benchmark for measured data. Software/browser measurements do not establish live VPS or hardware GPU SLAs. Detailed certification blockers are in SECURITY_AND_LIMITATIONS.md.
+
+The final run contains the 42 route/theme/width axe cases, 72 screenshot matrix cases, five additional non-happy-state captures, 9 original owner-auth cases, 24 XSS payloads in a browser test, local import/search/export/delete journeys, controlled protocol coordination, optional software-WebGL lifecycle, and performance/cleanup measurements. All matrix audits reported zero serious/critical axe violations.
