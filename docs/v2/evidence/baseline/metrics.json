@@ -1,0 +1,100 @@
+{
+  "node": "v24.19.0",
+  "browser": "153.0.8010.0",
+  "cpus": 9,
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "memory": 10451435520,
+  "chunks": [
+    {
+      "bytes": 21767,
+      "gzip": 7304
+    },
+    {
+      "bytes": 10030,
+      "gzip": 3940
+    },
+    {
+      "bytes": 215,
+      "gzip": 198
+    },
+    {
+      "bytes": 13822,
+      "gzip": 3514
+    },
+    {
+      "bytes": 45340,
+      "gzip": 14458
+    },
+    {
+      "bytes": 180364,
+      "gzip": 48415
+    },
+    {
+      "bytes": 229820,
+      "gzip": 71969
+    },
+    {
+      "bytes": 891541,
+      "gzip": 236646
+    }
+  ],
+  "jsBytes": 1392899,
+  "jsGzipBytes": 386444,
+  "metrics": {
+    "navigation": {
+      "name": "http://127.0.0.1:3098/",
+      "entryType": "navigation",
+      "startTime": 0,
+      "duration": 189.69999999995343,
+      "navigationId": 2924,
+      "initiatorType": "navigation",
+      "deliveryType": "cache",
+      "nextHopProtocol": "",
+      "renderBlockingStatus": "non-blocking",
+      "contentType": "text/html",
+      "contentEncoding": "gzip",
+      "workerStart": 0,
+      "workerRouterEvaluationStart": 0,
+      "workerCacheLookupStart": 0,
+      "workerMatchedSourceType": "",
+      "workerFinalSourceType": "",
+      "redirectStart": 0,
+      "redirectEnd": 0,
+      "fetchStart": 0.19999999995343387,
+      "domainLookupStart": 0.19999999995343387,
+      "domainLookupEnd": 0.19999999995343387,
+      "connectStart": 0.19999999995343387,
+      "secureConnectionStart": 0,
+      "connectEnd": 0.19999999995343387,
+      "requestStart": 1.1999999999534339,
+      "responseStart": 5,
+      "firstInterimResponseStart": 0,
+      "finalResponseHeadersStart": 5,
+      "responseEnd": 6.5,
+      "transferSize": 300,
+      "encodedBodySize": 5515,
+      "decodedBodySize": 22314,
+      "responseStatus": 200,
+      "serverTiming": [],
+      "unloadEventStart": 14.599999999860302,
+      "unloadEventEnd": 14.599999999860302,
+      "domInteractive": 189.39999999990687,
+      "domContentLoadedEventStart": 189.5,
+      "domContentLoadedEventEnd": 189.69999999995343,
+      "domComplete": 189.69999999995343,
+      "loadEventStart": 189.69999999995343,
+      "loadEventEnd": 189.69999999995343,
+      "type": "navigate",
+      "redirectCount": 0,
+      "activationStart": 0,
+      "criticalCHRestart": 0,
+      "notRestoredReasons": null,
+      "confidence": {
+        "randomizedTriggerRate": 0.4994798,
+        "value": "high"
+      }
+    },
+    "heap": 11900000
+  },
+  "gpu": "software SwiftShader, not hardware certification"
+}
