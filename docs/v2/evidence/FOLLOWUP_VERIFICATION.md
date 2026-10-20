@@ -7,3 +7,5 @@
 - No live services, credentials, data or synchronization were accessed or enabled.
 
 Native PostgreSQL CI for the previous backend tree (`5a8c521f0f78eecc171a45bd6b922d9166b7a7e9`), run 39493242173 / job 118871571675, passed all 92 tests (48 original unit/auth/Redis + 13 original backend + 10 V2 unit/fs/API + 12 V2 integration + 9 auth browser). The final follow-up tree must receive its own native CI result.
+
+Final native certification is evaluated on the stacked dashboard candidate; its CI also exercises this unchanged engine. Local native process creation is blocked by the execution sandbox. No live database is used as a fallback.
