@@ -1,0 +1,42 @@
+{
+  "unit": [
+    "\u2139 tests 10",
+    "\u2139 suites 0",
+    "\u2139 pass 10",
+    "\u2139 fail 0",
+    "\u2139 cancelled 0",
+    "\u2139 skipped 0",
+    "\u2139 todo 0",
+    "\u2139 duration_ms 233.626157"
+  ],
+  "integration_wasm": [
+    "\u2139 tests 12",
+    "\u2139 suites 0",
+    "\u2139 pass 12",
+    "\u2139 fail 0",
+    "\u2139 cancelled 0",
+    "\u2139 skipped 0",
+    "\u2139 todo 0",
+    "\u2139 duration_ms 4428.860736"
+  ],
+  "existing_unit_with_redis": [
+    "\u2139 tests 48",
+    "\u2139 suites 0",
+    "\u2139 pass 48",
+    "\u2139 fail 0",
+    "\u2139 cancelled 0",
+    "\u2139 skipped 0",
+    "\u2139 todo 0",
+    "\u2139 duration_ms 1709.395953"
+  ],
+  "existing_backend_local": [
+    "\u2139 tests 13",
+    "\u2139 suites 0",
+    "\u2139 pass 11",
+    "\u2139 fail 0",
+    "\u2139 cancelled 0",
+    "\u2139 skipped 2",
+    "\u2139 todo 0",
+    "\u2139 duration_ms 293.732843"
+  ]
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {dispatch} from '../app/api/auth/owner/[action]/route.ts';
+import {dispatch} from '../lib/auth/owner-dispatch.ts';
 import {environment,origin} from './helpers/owner-fixture.mjs';
 
 test('route diagnostics reveal no values, classify configuration and distinguish disabled auth',async()=>{

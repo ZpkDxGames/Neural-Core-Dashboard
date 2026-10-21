@@ -1,0 +1,20 @@
+✔ V2 additive migration checksum, least privilege and immutable revisions (2640.260666ms)
+✔ agent scopes, revoked tokens, forged roles and evidence validation fail closed (36.962498ms)
+✔ idempotent proposals never self-verify and require single-use owner review proof (110.512041ms)
+✔ two competing agent revisions produce one owner commit and one revision conflict (112.564153ms)
+✔ durable outbox recovers all file/SQL crash windows and double worker replay (377.748267ms)
+✔ external Obsidian edits are unverified proposals, idempotent, and owner-approved only (107.430213ms)
+✔ missing, renamed, orphan and malformed files are recorded without deletion or import (65.147895ms)
+✔ indexed retrieval, signed cursors, owner scopes, graph evidence and index reconstruction (190.124647ms)
+✔ paired checkpoint hashes reject missing/changed vault and mismatched snapshot (41.24498ms)
+✔ owner repair of an interrupted missing-file publication requires revision-bound proof (116.189901ms)
+✔ explicit owner consolidation tombstones the duplicate without modifying its target (109.878179ms)
+✔ owner tombstones and source deletion remove search/graph/files and cannot resurrect (279.605282ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4428.860736

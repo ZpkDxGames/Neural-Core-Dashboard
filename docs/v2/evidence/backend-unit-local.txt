@@ -1,0 +1,18 @@
+✔ V2 is absent by default and rejects browser identity and wrong machine tokens (62.282145ms)
+✔ validated JSON, explicit revisions, response budgets and generic error redaction (25.653548ms)
+✔ bounded per-principal quota throttles writes without claiming publication (7.835064ms)
+✔ canonical Markdown round trip keeps stable identity, canonical UTF-8 hash and wikilinks (4.003496ms)
+✔ YAML rejects aliases, tags, unknown keys, duplicate keys and forged identity (1.652721ms)
+✔ Obsidian block lists and untrusted self-reported state parse without granting trust (0.659287ms)
+✔ note and relation budgets are enforced, commands remain inert content (0.844565ms)
+✔ atomic publication, idempotent replay, and tombstone deletion (26.708576ms)
+✔ path traversal, symlinks, hardlinks, modes and invalid UTF-8 fail closed (22.195566ms)
+✔ crashes before/after rename are replayable without duplicate files (25.521499ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 233.626157

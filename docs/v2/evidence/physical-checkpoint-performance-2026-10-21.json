@@ -1,0 +1,253 @@
+{
+  "at": "2026-10-21T19:23:01.025Z",
+  "baseline": "be98d060c604791ca75da7efd434218a6c686fac",
+  "method": "Three alternating process-isolated legacy/current trials per size on the same warm-cache fixture. Real files, simulated ledger, no SQL latency. No cache flushing or outlier exclusion. 100k full checkpoint deliberately blocked.",
+  "runtime": {
+    "node": "v24.19.0",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "cpus": 9,
+    "memory": 10451439616
+  },
+  "samples": [
+    {
+      "physicalFiles": 1000,
+      "fixtureCreationMs": 296.62783,
+      "trials": [
+        {
+          "mode": "legacy",
+          "notes": 1000,
+          "manifestBytes": 137166,
+          "elapsedMs": 519.2446239999999,
+          "cpuMicroseconds": {
+            "user": 226417,
+            "system": 158842
+          },
+          "directoryWalks": 10,
+          "fileReads": 1000,
+          "maxRssKiB": 53056,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "current",
+          "notes": 1000,
+          "manifestBytes": 137166,
+          "elapsedMs": 345.20119700000004,
+          "cpuMicroseconds": {
+            "user": 163591,
+            "system": 112420
+          },
+          "directoryWalks": 1,
+          "fileReads": 1000,
+          "maxRssKiB": 53632,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "current",
+          "notes": 1000,
+          "manifestBytes": 137166,
+          "elapsedMs": 405.114322,
+          "cpuMicroseconds": {
+            "user": 169842,
+            "system": 136873
+          },
+          "directoryWalks": 1,
+          "fileReads": 1000,
+          "maxRssKiB": 53516,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "legacy",
+          "notes": 1000,
+          "manifestBytes": 137166,
+          "elapsedMs": 439.678275,
+          "cpuMicroseconds": {
+            "user": 187476,
+            "system": 140632
+          },
+          "directoryWalks": 10,
+          "fileReads": 1000,
+          "maxRssKiB": 53504,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "legacy",
+          "notes": 1000,
+          "manifestBytes": 137166,
+          "elapsedMs": 436.444612,
+          "cpuMicroseconds": {
+            "user": 206525,
+            "system": 134261
+          },
+          "directoryWalks": 10,
+          "fileReads": 1000,
+          "maxRssKiB": 53776,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "current",
+          "notes": 1000,
+          "manifestBytes": 137166,
+          "elapsedMs": 410.138139,
+          "cpuMicroseconds": {
+            "user": 194796,
+            "system": 133561
+          },
+          "directoryWalks": 1,
+          "fileReads": 1000,
+          "maxRssKiB": 53620,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        }
+      ]
+    },
+    {
+      "physicalFiles": 10000,
+      "fixtureCreationMs": 1924.253092,
+      "trials": [
+        {
+          "mode": "legacy",
+          "notes": 10000,
+          "manifestBytes": 1370166,
+          "elapsedMs": 5710.666861000001,
+          "cpuMicroseconds": {
+            "user": 3123233,
+            "system": 1835152
+          },
+          "directoryWalks": 100,
+          "fileReads": 10000,
+          "maxRssKiB": 87468,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "current",
+          "notes": 10000,
+          "manifestBytes": 1370166,
+          "elapsedMs": 2842.3747999999996,
+          "cpuMicroseconds": {
+            "user": 1189991,
+            "system": 1127544
+          },
+          "directoryWalks": 1,
+          "fileReads": 10000,
+          "maxRssKiB": 81680,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "current",
+          "notes": 10000,
+          "manifestBytes": 1370166,
+          "elapsedMs": 3628.105528,
+          "cpuMicroseconds": {
+            "user": 1269484,
+            "system": 1072936
+          },
+          "directoryWalks": 1,
+          "fileReads": 10000,
+          "maxRssKiB": 82984,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "legacy",
+          "notes": 10000,
+          "manifestBytes": 1370166,
+          "elapsedMs": 6841.58712,
+          "cpuMicroseconds": {
+            "user": 3256148,
+            "system": 1984141
+          },
+          "directoryWalks": 100,
+          "fileReads": 10000,
+          "maxRssKiB": 87960,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "legacy",
+          "notes": 10000,
+          "manifestBytes": 1370166,
+          "elapsedMs": 6938.627732,
+          "cpuMicroseconds": {
+            "user": 3648157,
+            "system": 1711380
+          },
+          "directoryWalks": 100,
+          "fileReads": 10000,
+          "maxRssKiB": 88068,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "current",
+          "notes": 10000,
+          "manifestBytes": 1370166,
+          "elapsedMs": 4106.763652,
+          "cpuMicroseconds": {
+            "user": 1407331,
+            "system": 1363920
+          },
+          "directoryWalks": 1,
+          "fileReads": 10000,
+          "maxRssKiB": 82916,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        }
+      ]
+    },
+    {
+      "physicalFiles": 100000,
+      "fixtureCreationMs": 17895.913097999997,
+      "trials": [
+        {
+          "mode": "current",
+          "error": "CHECKPOINT_ENTRY_BUDGET",
+          "elapsedMs": 0.5475460000000112,
+          "cpuMicroseconds": {
+            "user": 494,
+            "system": 51
+          },
+          "directoryWalks": 0,
+          "fileReads": 0,
+          "maxRssKiB": 65148,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "inventory",
+          "error": "CHECKPOINT_ENTRY_BUDGET",
+          "elapsedMs": 45.34458999999998,
+          "cpuMicroseconds": {
+            "user": 52320,
+            "system": 0
+          },
+          "directoryWalks": 1,
+          "fileReads": 0,
+          "maxRssKiB": 66864,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        },
+        {
+          "mode": "legacy-one-page",
+          "singlePage": true,
+          "elapsedMs": 503.52622399999996,
+          "cpuMicroseconds": {
+            "user": 392388,
+            "system": 58198
+          },
+          "directoryWalks": 1,
+          "fileReads": 0,
+          "maxRssKiB": 69992,
+          "fsReadBlocks": 0,
+          "fsWriteBlocks": 0
+        }
+      ]
+    }
+  ]
+}

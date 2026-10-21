@@ -14,7 +14,9 @@ test('production OIDC adapter demands pinned Google discovery, signed ID tokens,
   assert.doesNotMatch(code,/skipStateCheck|allowInsecureRequests|NEXT_PUBLIC_/);
 });
 test('Next auth endpoint remains independent from Oracle memory API and legacy Vercel DB',()=>{
-  const code=readFileSync(new URL('../app/api/auth/owner/[action]/route.ts',import.meta.url),'utf8');
+  const route=readFileSync(new URL('../app/api/auth/owner/[action]/route.ts',import.meta.url),'utf8');
+  const code=route+readFileSync(new URL('../lib/auth/owner-dispatch.ts',import.meta.url),'utf8');
+  assert.doesNotMatch(route,/export (?:async )?function dispatch/);
   assert.match(code,/AUTH_NOT_CONFIGURED/);
   assert.match(code,/force-dynamic/);
   assert.match(code,/nodejs/);
