@@ -26,3 +26,10 @@ test('bounded per-principal quota throttles writes without claiming publication'
   const r=await request('/v2/memories/proposals',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal((await r.json()).data.state,'proposed');
   await request('/v2/memories');assert.equal((await request('/v2/memories')).status,429);
 }));
+
+test('proposal API forwards repeated bounded filters and cursor and rejects ambiguous query parameters',()=>fixture({enabled:true,engine:{async proposals(p,q){assert.deepEqual(p,principal);return q;}}},async request=>{
+  const response=await request('/v2/memories/proposals?limit=3&cursor=signed&status=proposed&status=conflict&type=project&type=reference');
+  assert.equal(response.status,200);assert.deepEqual((await response.json()).data,{limit:3,cursor:'signed',statuses:['proposed','conflict'],noteTypes:['project','reference']});
+  for(const suffix of ['limit=2&limit=3','cursor=x&cursor=y','status=x&status=x&status=x&status=x&status=x','type=x&type=x&type=x&type=x&type=x','q=unsupported','owner=forged','limit=-1'])
+    assert.equal((await request('/v2/memories/proposals?'+suffix)).status,400);
+}));

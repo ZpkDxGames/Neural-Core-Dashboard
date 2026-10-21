@@ -1,11 +1,11 @@
 {
-  "at": "2026-10-20T21:28:36.565Z",
+  "at": "2026-10-21T19:23:23.326Z",
   "runtime": {
     "node": "v24.19.0",
     "browser": "153.0.8010.0",
-    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
     "cpus": 9,
-    "memory": 10451435520,
+    "memory": 10451439616,
     "graphics": "headless software SwiftShader"
   },
   "fixture": {
@@ -14,14 +14,14 @@
     "searchSamples": 20,
     "graphRouteCycles": 10
   },
-  "coldReadyMs": 259.8119850000003,
+  "coldReadyMs": 193.01677199999904,
   "rootMetrics": {
     "navigation": {
       "name": "http://127.0.0.1:3099/",
       "entryType": "navigation",
       "startTime": 0,
-      "duration": 160,
-      "navigationId": 5959,
+      "duration": 107.80000000004657,
+      "navigationId": 8167,
       "initiatorType": "navigation",
       "deliveryType": "",
       "nextHopProtocol": "http/1.1",
@@ -35,30 +35,30 @@
       "workerFinalSourceType": "",
       "redirectStart": 0,
       "redirectEnd": 0,
-      "fetchStart": 0.20000000018626451,
-      "domainLookupStart": 2.1000000005587935,
-      "domainLookupEnd": 2.2999999998137355,
-      "connectStart": 2.2999999998137355,
+      "fetchStart": 0.2000000000698492,
+      "domainLookupStart": 0.8000000000465661,
+      "domainLookupEnd": 0.8000000000465661,
+      "connectStart": 0.8000000000465661,
       "secureConnectionStart": 0,
-      "connectEnd": 2.2999999998137355,
-      "requestStart": 2.5,
-      "responseStart": 19.700000000186265,
+      "connectEnd": 1,
+      "requestStart": 1,
+      "responseStart": 12.800000000046566,
       "firstInterimResponseStart": 0,
-      "finalResponseHeadersStart": 19.700000000186265,
-      "responseEnd": 22.100000000558794,
-      "transferSize": 6050,
-      "encodedBodySize": 5750,
-      "decodedBodySize": 28760,
+      "finalResponseHeadersStart": 12.800000000046566,
+      "responseEnd": 17,
+      "transferSize": 6064,
+      "encodedBodySize": 5764,
+      "decodedBodySize": 28787,
       "responseStatus": 200,
       "serverTiming": [],
       "unloadEventStart": 0,
       "unloadEventEnd": 0,
-      "domInteractive": 51.60000000055879,
-      "domContentLoadedEventStart": 51.60000000055879,
-      "domContentLoadedEventEnd": 51.700000000186265,
-      "domComplete": 160,
-      "loadEventStart": 160,
-      "loadEventEnd": 160,
+      "domInteractive": 70.90000000002328,
+      "domContentLoadedEventStart": 70.90000000002328,
+      "domContentLoadedEventEnd": 70.90000000002328,
+      "domComplete": 107.80000000004657,
+      "loadEventStart": 107.80000000004657,
+      "loadEventEnd": 107.80000000004657,
       "type": "navigate",
       "redirectCount": 0,
       "activationStart": 0,
@@ -74,89 +74,89 @@
   },
   "assets": [
     {
-      "path": "/_next/static/chunks/main-app-d45ff09d0b2153f7.js",
-      "bytes": 513,
-      "gzip": 221
-    },
-    {
-      "path": "/_next/static/chunks/885-010e1a0b6f4aa26a.js",
-      "bytes": 12730,
-      "gzip": 5010
-    },
-    {
-      "path": "/_next/static/chunks/webpack-2a4caac6e3aad29d.js",
-      "bytes": 3623,
+      "path": "/_next/static/chunks/webpack-d15810d936f4084c.js",
+      "bytes": 3624,
       "gzip": 1910
     },
     {
-      "path": "/_next/static/chunks/app/layout-156468840c761f7f.js",
-      "bytes": 15771,
-      "gzip": 5561
+      "path": "/_next/static/chunks/main-app-d96959381e935bdb.js",
+      "bytes": 512,
+      "gzip": 219
     },
     {
-      "path": "/_next/static/chunks/app/page-fcb15932edd65f81.js",
-      "bytes": 8782,
-      "gzip": 3162
+      "path": "/_next/static/chunks/561-b06c8249407187c8.js",
+      "bytes": 12735,
+      "gzip": 5065
     },
     {
-      "path": "/_next/static/chunks/app/error-1f56d8fac799f5e9.js",
-      "bytes": 618,
-      "gzip": 411
+      "path": "/_next/static/chunks/232-7cad8fef8bae790a.js",
+      "bytes": 13539,
+      "gzip": 5131
     },
     {
-      "path": "/_next/static/chunks/287-97bea8bfe69bb3d3.js",
-      "bytes": 13545,
-      "gzip": 5113
+      "path": "/_next/static/chunks/app/layout-68252c605e3569de.js",
+      "bytes": 15863,
+      "gzip": 5601
     },
     {
-      "path": "/_next/static/chunks/794-0ac5e2f0e81d2e0d.js",
-      "bytes": 242379,
-      "gzip": 67335
+      "path": "/_next/static/chunks/app/error-df1acd8bfdf87059.js",
+      "bytes": 616,
+      "gzip": 409
     },
     {
-      "path": "/_next/static/chunks/4bd1b696-c7408084347438ae.js",
-      "bytes": 203721,
-      "gzip": 64057
+      "path": "/_next/static/chunks/app/page-776d008b99853534.js",
+      "bytes": 8778,
+      "gzip": 3154
+    },
+    {
+      "path": "/_next/static/chunks/782-eff213f0535ec8cf.js",
+      "bytes": 242372,
+      "gzip": 66608
+    },
+    {
+      "path": "/_next/static/chunks/abb173ce-38325ce8ba83200f.js",
+      "bytes": 203719,
+      "gzip": 64054
     }
   ],
-  "jsBytes": 501682,
-  "jsGzipBytes": 152780,
-  "seedTransactionMs": 413.13140900000144,
+  "jsBytes": 501758,
+  "jsGzipBytes": 152151,
+  "seedTransactionMs": 310.0231730000014,
   "search": {
-    "p50": 222.57492700000148,
-    "p95": 3709.9121950000044,
-    "max": 3865.12515,
+    "p50": 195.2432689999987,
+    "p95": 203.04079799999818,
+    "max": 723.2943529999975,
     "samples": [
-      310.17323600000236,
-      214.19883400000253,
-      302.0927240000019,
-      235.3718829999998,
-      251.78562599999714,
-      573.7103389999975,
-      2411.0610469999956,
-      3865.12515,
-      3709.9121950000044,
-      218.81757199999993,
-      221.95472500000324,
-      222.57492700000148,
-      233.96416699999827,
-      224.57301000000007,
-      217.8426330000002,
-      203.86251099999936,
-      209.97214600000007,
-      204.67415099999926,
-      213.0043880000012,
-      209.79055200000585
+      723.2943529999975,
+      203.01976500000092,
+      191.7787819999976,
+      194.47281600000133,
+      195.2432689999987,
+      197.48707099999956,
+      194.98481399999946,
+      195.34241199999815,
+      201.9617410000028,
+      195.39250100000208,
+      190.30967299999975,
+      193.29769899999883,
+      193.63894699999946,
+      199.52083100000164,
+      199.64162399999987,
+      199.00771899999745,
+      188.047340000001,
+      191.55495399999927,
+      193.85311900000306,
+      203.04079799999818
     ],
     "noNetwork": true
   },
   "graph": {
     "count": "Showing 1,157 of 5,000 source conversations · 1,171 nodes · 3,484 links\nReset",
-    "layout": "Legend and graph boundaries\n\nFound by simple matching rules. Not verified. Agent suggestions use a dashed ring. No imported source is automatically verified.\n\nAI & Automation\nCore\nDevelopment\nGaming\nGeneral\nInfrastructure\nLearning\nPlanning\nSources\nUI / UX\n\nLayout: 690.2 ms in a worker · Reduced detail for dense views · List and Hierarchy expose node attributes without graphics.",
+    "layout": "Legend and graph boundaries\n\nFound by simple matching rules. Not verified. Agent suggestions use a dashed ring. No imported source is automatically verified.\n\nAI & Automation\nCore\nDevelopment\nGaming\nGeneral\nInfrastructure\nLearning\nPlanning\nSources\nUI / UX\n\nLayout: 413.1 ms in a worker · Reduced detail for dense views · List and Hierarchy expose node attributes without graphics.",
     "frameGapMs": {
       "p50": 16.699999999999818,
-      "p95": 16.799999999999955,
-      "max": 16.800000000000182
+      "p95": 16.700000000000273,
+      "max": 383.29999999999995
     },
     "idleRafMedianFps": 59.88023952095874,
     "heap": 10000000,
@@ -164,9 +164,9 @@
     "canvases": 2
   },
   "cleanup": {
-    "heapBefore": 7450348,
-    "heapAfter": 8550308,
-    "delta": 1099960,
+    "heapBefore": 7640476,
+    "heapAfter": 8473400,
+    "delta": 832924,
     "canvasesRemovedEachCycle": true
   },
   "unmeasured": [

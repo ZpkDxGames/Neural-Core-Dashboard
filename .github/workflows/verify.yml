@@ -42,6 +42,8 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix backend --no-audit --no-fund
+      - name: Locked dependency advisory audit
+        run: npm audit --audit-level=low
       - name: Prepare isolated synthetic PostgreSQL
         run: |
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE neuralcore_api LOGIN PASSWORD 'synthetic-ci-role';"

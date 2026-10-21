@@ -1,3 +1,29 @@
+# Audit remediation verification — 2026-10-21
+
+The original 141 browser cases and all assertions are retained. Local full run: **141 passed, 0 failed/skipped/flaky**, 159 seconds (rounded 2.6 minutes), with 42 route/theme/width axe checks and 77 synthetic screenshots. The current browser adapter remains `unavailableVault`; no remote memory requests or real agents are enabled.
+
+| Check | Local remediation result |
+| --- | --- |
+| Original parser/auth/Redis + concepts | 53 passed, zero skipped; real isolated Redis 7.4 |
+| Original backend | 11 passed, two native PostgreSQL cases skipped locally |
+| V2 unit/fs/API | 15 passed (original 10 + 5 new) |
+| V2 SQL migration/recovery | 16 passed (original 13 + 3 new), serialized PostgreSQL WASM |
+| Brain pure contracts/lifecycle | 32 passed |
+| Original complete Chromium browser suite | 141 passed, zero skipped/flaky |
+| Strict TypeScript, production Webpack build, token/status lint and parity | passed |
+| Locked dependency advisory audit | zero known advisories |
+| Physical 1k/10k checkpoints and actual 100k guard | measured; 100k full certification explicitly blocked |
+
+Local checks used the existing dependency tree from the identical lockfile after offline `npm ci` encountered an uncached tarball. Native PostgreSQL 16 locking, migration, rollback, least privilege and restore must be verified by fresh exact-SHA CI. The combined expected CI total is **270**, versus original 262: 53 + 13 + 15 + 16 + 32 + 141. Backend draft has its separate 101-case total and does not add to the combined count. Final exact published SHA, CI URLs, outcomes and downloadable artifacts are reported in the draft PR bodies and delivery certification after CI completes; local WASM results never substitute for native concurrency.
+
+For the audit findings and exact behavior, read `../v2/REMEDIATION_REPORT.md`, `../v2/REMEDIATION_CONTRACTS.md` and `../v2/PRIVATE_STAGING_CONTRACTS.md`. Performance provenance and all unfiltered historical/matched samples are in `PERFORMANCE_REPORT.md` and `evidence/history` / `evidence/remediation`.
+
+Real Obsidian desktop, live Google freshness, private gateway/issuer/provisioning, 100k streaming snapshots, encrypted paired restore, VPS capacity and real-device QA remain uncertified. Main/preview and production are untouched.
+
+---
+
+# Historical pre-remediation report (retained)
+
 # Verification report — development candidate
 
 The final complete production-build browser run passed all 141 cases, with zero failures or skips in 4.4 minutes. Results below refer to tests actually executed. Native combined-candidate CI is attached to the dashboard draft; backend-native results are pinned below.

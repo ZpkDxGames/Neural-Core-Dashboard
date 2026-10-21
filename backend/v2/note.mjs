@@ -46,7 +46,7 @@ export function validateNote(raw){
 /** Deliberately small YAML 1.2 subset: JSON strings/arrays plus decimal integers.
  * No tags, aliases, anchors, duplicate/unknown keys, objects or implicit booleans.
  * Both emitted flow arrays and Obsidian block-list strings are supported. */
-const KEYS=new Set(['brain_schema','note_id','revision','type','state','created_at','updated_at','agent_origin','source_refs','related_ids','tags','aliases']);
+const KEYS=new Set(['brain_schema','note_id','revision','type','state','created_at','updated_at','agent_origin','source_refs','related_ids','tags','aliases','brain_links']);
 export function parseMarkdown(text){
   if(typeof text!=='string'||Buffer.byteLength(text)>LIMITS.file||text.includes('\0')||text.includes('\ufffd'))fail('INVALID_MARKDOWN');
   const canonical=text.replace(/\r\n?/g,'\n');
@@ -74,13 +74,21 @@ export function parseMarkdown(text){
   if(meta.state!==undefined&&!['proposed','reviewed','verified','rejected'].includes(meta.state))fail('INVALID_FILE_STATE');
   for(const key of ['created_at','updated_at'])if(meta[key]!==undefined&&(typeof meta[key]!=='string'||!/^\d{4}-\d\d-\d\dT/.test(meta[key])||!Number.isFinite(Date.parse(meta[key]))))fail('INVALID_TIMESTAMP');
   if(meta.agent_origin!==undefined&&(typeof meta.agent_origin!=='string'||meta.agent_origin.length>120))fail('INVALID_AGENT_ORIGIN');
-  for(const key of ['source_refs','related_ids','tags','aliases'])if(meta[key]!==undefined&&(!Array.isArray(meta[key])||meta[key].length>32||meta[key].some(x=>typeof x!=='string'||Buffer.byteLength(x)>240)))fail('INVALID_YAML_ARRAY');
+  for(const key of ['source_refs','related_ids','tags','aliases','brain_links'])if(meta[key]!==undefined&&(!Array.isArray(meta[key])||meta[key].length>32||meta[key].some(x=>typeof x!=='string'||Buffer.byteLength(x)>240)))fail('INVALID_YAML_ARRAY');
   if(meta.related_ids?.some(id=>!uuid(id)))fail('INVALID_RELATED_ID');
+  if(meta.brain_links!==undefined){
+    const ids=meta.brain_links.map(link=>link.slice(2,-2));
+    if(meta.brain_links.some((link,i)=>link!=='[['+ids[i]+']]'||!uuid(ids[i])||!meta.related_ids?.includes(ids[i]))||
+      new Set(ids).size!==ids.length)fail('INVALID_LINK_PROJECTION');
+  }
   return {meta,body:cleanText(canonical.slice(end+5),LIMITS.body),hash:hash(canonical),text:canonical};
 }
-export function serializeNote({noteId,revision,payload,createdAt,updatedAt,agentOrigin}){
+export function serializeNote({noteId,revision,payload,createdAt,updatedAt,agentOrigin,approvedRelations=false}){
+  // Obsidian indexes quoted internal links in properties. UUID filenames are the
+  // destinations; title aliases stay display-only. SQL is the approval authority.
+  const brainLinks=approvedRelations?[...new Set(payload.relations.map(r=>r.targetId))].sort().map(id=>'[['+id+']]'):[];
   const meta={brain_schema:1,note_id:noteId,revision,type:payload.type,state:'proposed',created_at:createdAt,updated_at:updatedAt,agent_origin:agentOrigin,
-    source_refs:payload.evidence.map(e=>e.kind==='manual'?'manual:owner':`conversation:${e.conversationId}/message:${e.messageId}`),related_ids:payload.relations.map(r=>r.targetId),tags:payload.tags,aliases:[payload.title]};
+    source_refs:payload.evidence.map(e=>e.kind==='manual'?'manual:owner':`conversation:${e.conversationId}/message:${e.messageId}`),related_ids:payload.relations.map(r=>r.targetId),tags:payload.tags,aliases:[payload.title],brain_links:brainLinks};
   const text='---\n'+Object.entries(meta).map(([k,v])=>k+': '+JSON.stringify(v)).join('\n')+'\n---\n'+payload.body.replace(/\n*$/,'')+'\n';
   parseMarkdown(text);return text;
 }

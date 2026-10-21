@@ -29,3 +29,7 @@ Default rollback is code/capability rollback: keep V2 unbound/off, stop only its
 Do not run a destructive down migration against real data. Before any future data rollback, quiesce publication and editor writes, restore a known encrypted PostgreSQL+vault pair into a **new isolated** environment, verify manifest/schema/hash/tombstone consistency, and obtain owner approval before selecting that restored state. Never restore only Markdown and let old files resurrect tombstones.
 
 For disposable tests only, dropping the entire disposable database and recreating it proves clean reapplication; the CI database/service is discarded after verification. Historical migration files are never edited to simulate rollback.
+
+## Remediation boundary (2026-10-21)
+
+Migration 003 is unchanged. Offline checkpoints now refuse more than 10,000 ledger records or directory entries and require full owner export scope plus explicit operator quiescence; see REMEDIATION_CONTRACTS.md. A manifest is not an encrypted restore certification. The proposed gateway/issuer/provisioning contract in PRIVATE_STAGING_CONTRACTS.md requires a new reviewed migration 004 for action/session/intent/epoch-bound proofs and expiring credentials; that migration is architecture-only and is not included or runnable here.

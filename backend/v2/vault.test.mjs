@@ -25,3 +25,23 @@ test('crashes before/after rename are replayable without duplicate files',()=>fi
   }
   const list=await vault.list('synthetic','',1);assert.equal(list.files.length,1);assert.ok(list.nextCursor);
 }));
+
+test('offline inventory is deterministic, single-walk and enforces quiescence, names and memory budgets',()=>fixture(async(vault)=>{
+  const dir=await vault.directory('synthetic');
+  for(const file of ['Z.md','A.md','M.md'])await writeFile(join(dir,file),'Synthetic',{mode:0o600});
+  const inventory=await vault.inventory('synthetic',{quiesced:true});assert.deepEqual(inventory.files,['A.md','M.md','Z.md']);assert.equal(inventory.scanned,3);
+  await assert.rejects(()=>vault.inventory('synthetic'),e=>e.code==='QUIESCED_SNAPSHOT_REQUIRED');
+  await assert.rejects(()=>vault.inventory('synthetic',{quiesced:true,maxEntries:2}),e=>e.code==='CHECKPOINT_ENTRY_BUDGET');
+  await assert.rejects(()=>vault.inventory('synthetic',{quiesced:true,maxNameBytes:10}),e=>e.code==='CHECKPOINT_MEMORY_BUDGET');
+  await assert.rejects(()=>vault.inventory('synthetic',{quiesced:true,maxEntries:100000}),e=>e.code==='INVALID_INVENTORY_BUDGET');
+  await writeFile(join(dir,'.publish-synthetic.tmp'),'Synthetic',{mode:0o600});
+  await assert.rejects(()=>vault.inventory('synthetic',{quiesced:true}),e=>e.code==='VAULT_NOT_QUIESCENT');
+}));
+test('offline inventory rejects unsafe Markdown entries and detects directory drift',()=>fixture(async(vault,root)=>{
+  const dir=await vault.directory('synthetic');await writeFile(join(root,'outside'),'Synthetic',{mode:0o600});
+  await symlink(join(root,'outside'),join(dir,'unsafe.md'));
+  await assert.rejects(()=>vault.inventory('synthetic',{quiesced:true}),e=>e.code==='UNSAFE_FILE');await rm(join(dir,'unsafe.md'));
+  const original=vault.inventoryStamp.bind(vault);let calls=0;
+  vault.inventoryStamp=async ownerId=>{const stamp=await original(ownerId);return ++calls===1?stamp:stamp+'-changed';};
+  await assert.rejects(()=>vault.inventory('synthetic',{quiesced:true}),e=>e.code==='VAULT_NOT_QUIESCENT');
+}));

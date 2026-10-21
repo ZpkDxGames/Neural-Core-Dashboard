@@ -66,6 +66,31 @@ export class FileVault {
     if(before.hash!==expectedHash)fail('EXTERNAL_EDIT_CONFLICT',409);
     const directory=await this.directory(ownerId);await unlink(join(directory,fileName(name)));await syncDirectory(directory);
   }
+  /** Offline, one-walk inventory. Intentionally refuses >10k directory entries.
+   * This bounded in-memory sort is not a 100k streaming checkpoint implementation. */
+  async inventory(ownerId,{quiesced=false,maxEntries=10000,maxNameBytes=4*1024*1024}={}){
+    if(quiesced!==true)fail('QUIESCED_SNAPSHOT_REQUIRED');
+    if(!Number.isInteger(maxEntries)||maxEntries<1||maxEntries>10000||!Number.isInteger(maxNameBytes)||maxNameBytes<1||maxNameBytes>4*1024*1024)fail('INVALID_INVENTORY_BUDGET');
+    const directory=await this.directory(ownerId),before=await this.inventoryStamp(ownerId),dir=await opendir(directory);
+    const files=[];let scanned=0,estimatedBytes=0;
+    for await(const entry of dir){
+      if(++scanned>maxEntries)fail('CHECKPOINT_ENTRY_BUDGET',413);
+      if(/^\.publish-/.test(entry.name))fail('VAULT_NOT_QUIESCENT',409);
+      if(!entry.name.endsWith('.md'))continue;
+      fileName(entry.name);
+      if(!entry.isFile()||entry.isSymbolicLink())fail('UNSAFE_FILE');
+      estimatedBytes+=Buffer.byteLength(entry.name)*2+64;
+      if(estimatedBytes>maxNameBytes)fail('CHECKPOINT_MEMORY_BUDGET',413);
+      files.push(entry.name);
+    }
+    const stamp=await this.inventoryStamp(ownerId);
+    if(stamp!==before)fail('VAULT_NOT_QUIESCENT',409);
+    return {files:files.sort(),stamp,scanned,estimatedNameBytes:estimatedBytes};
+  }
+  async inventoryStamp(ownerId){
+    const stat=await lstat(await this.directory(ownerId),{bigint:true});
+    return [stat.dev,stat.ino,stat.mtimeNs,stat.ctimeNs].join(':');
+  }
   async list(ownerId,after='',limit=50){
     if(!Number.isInteger(limit)||limit<1||limit>100)fail('INVALID_LIMIT');
     const directory=await this.directory(ownerId),dir=await opendir(directory);
