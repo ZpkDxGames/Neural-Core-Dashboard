@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test';import assert from 'node:assert/strict';
 import {randomBytes,randomUUID} from 'node:crypto';import {mkdtemp,rm,writeFile,rename,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {testDatabase} from './test-database.mjs';import {MemoryEngine} from './store.mjs';import {FileVault} from './vault.mjs';import {VaultWorker} from './worker.mjs';
-import {hash} from './note.mjs';import {applyVaultMigration} from './migrate.mjs';import {checkpoint,verifyCheckpoint} from './checkpoint.mjs';
+import {hash} from './note.mjs';import {createServer} from 'node:http';import {makeV2Handler} from './api.mjs';import {applyVaultMigration} from './migrate.mjs';import {checkpoint,verifyCheckpoint} from './checkpoint.mjs';
 let db,engine,vault,worker,root,owner,agent,viewer,other,typed,agent2;
 const tokens={owner:'nbv2_'+'a'.repeat(43),agent:'nbv2_'+'b'.repeat(43),viewer:'nbv2_'+'c'.repeat(43),other:'nbv2_'+'d'.repeat(43),typed:'nbv2_'+'e'.repeat(43),agent2:'nbv2_'+'f'.repeat(43)};
 const note=(body='Synthetic memory '+randomUUID(),extra={})=>({title:'Synthetic project',body,type:'project',tags:['synthetic'],evidence:[{kind:'conversation',conversationId:'chatgpt:synthetic-v2',messageId:'m1'}],relations:[],...extra});
@@ -138,6 +138,20 @@ test('mixed proposal queue uses microsecond keysets, actionable defaults, signed
     assert.equal(new Set(queue.result.map(x=>x.proposal_id)).size,queue.result.length);
     const all=await collect(other,{statuses:states});assert.equal(all.result.length,167);assert.equal(new Set(all.result.map(x=>x.proposal_id)).size,167);
     for(const [i,item] of all.result.entries())if(i)assert.ok(new Date(item.created_at)>=new Date(all.result[i-1].created_at));
+    const server=createServer(makeV2Handler({engine,enabled:true}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+    try{
+      const base='http://127.0.0.1:'+server.address().port+'/v2/memories/proposals';let cursor=null,firstCursor;const ids=[];
+      do{
+        const url=new URL(base);url.searchParams.set('limit','13');for(const state of states)url.searchParams.append('status',state);if(cursor)url.searchParams.set('cursor',cursor);
+        const response=await fetch(url,{headers:{authorization:'Bearer '+tokens.other}});assert.equal(response.status,200);
+        const body=await response.json();assert.equal(body.schemaVersion,2);assert.equal(body.data.partial,Boolean(body.data.nextCursor));
+        ids.push(...body.data.items.map(x=>x.proposal_id));cursor=body.data.nextCursor;firstCursor??=cursor;
+      }while(cursor);
+      assert.deepEqual(new Set(ids),new Set(expected.map(x=>x.proposalId)));assert.equal(ids.length,167);
+      const cross=new URL(base);cross.searchParams.set('limit','13');for(const state of states)cross.searchParams.append('status',state);cross.searchParams.set('cursor',firstCursor);
+      assert.equal((await fetch(cross,{headers:{authorization:'Bearer '+tokens.owner}})).status,400);
+    }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+
     const references=await collect(scoped,{statuses:states});assert.deepEqual(new Set(references.result.map(x=>x.proposal_id)),new Set(expected.filter(x=>x.author===principalId&&x.kind==='reference').map(x=>x.proposalId)));
     const filtered=await collect(other,{noteTypes:['project'],statuses:['conflict']});assert.equal(filtered.result.length,expected.filter(x=>x.kind==='project'&&x.state==='conflict').length);
     const cursor=queue.first.nextCursor;assert.ok(cursor);
