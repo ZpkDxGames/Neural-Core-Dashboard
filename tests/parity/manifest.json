@@ -1,0 +1,20 @@
+{
+  "sourceCommit":"525dcb070c158e6cb485785ba659d0d114b9a30f",
+  "features":[
+    {"id":"F01","feature":"Archive parser","test":"F01: Claude and normalized Gemini","spec":"v2.spec.mjs"},
+    {"id":"F02","feature":"Preview and storage consent","test":"J1 F01 F02 F03","spec":"v2.spec.mjs"},
+    {"id":"F03","feature":"Persistence, export roundtrip, deletion","test":"J1 F01 F02 F03","spec":"v2.spec.mjs"},
+    {"id":"F04","feature":"Conversation library","test":"J2 F04 F05 F06 F07","spec":"v2.spec.mjs"},
+    {"id":"F05","feature":"Cited context copy","test":"J2 F04 F05 F06 F07","spec":"v2.spec.mjs"},
+    {"id":"F06","feature":"Actual browser counts","test":"J2 F04 F05 F06 F07","spec":"v2.spec.mjs"},
+    {"id":"F07","feature":"Heuristic categories","test":"J2 F04 F05 F06 F07","spec":"v2.spec.mjs"},
+    {"id":"F08","feature":"Graph controls and sphere fallback","test":"J7 F08 F09 F14","spec":"v2.spec.mjs"},
+    {"id":"F09","feature":"Explicit synthetic demo","test":"J7 F08 F09 F14","spec":"v2.spec.mjs"},
+    {"id":"F10","feature":"Owner auth states","test":"owner logout failure never reports signed out","spec":"owner-auth.spec.mjs"},
+    {"id":"F11","feature":"Truthful disabled synchronization","test":"F11 F12 F13","spec":"v2.spec.mjs"},
+    {"id":"F12","feature":"Legacy deep links","test":"F11 F12 F13","spec":"v2.spec.mjs"},
+    {"id":"F13","feature":"All six legacy views","test":"F11 F12 F13","spec":"v2.spec.mjs"},
+    {"id":"F14","feature":"PR2 concept evidence port","test":"source linked graph preserves actual lexical citations","spec":"v2.spec.mjs"},
+    {"id":"F15","feature":"Existing authentication suites","test":"logout rechecks the session in another open tab","spec":"owner-auth.spec.mjs"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "525dcb070c158e6cb485785ba659d0d114b9a30f",
+  "views": [
+    "overview",
+    "network",
+    "memories",
+    "insights",
+    "sources",
+    "settings"
+  ]
+}

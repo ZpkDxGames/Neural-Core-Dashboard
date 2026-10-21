@@ -22,7 +22,8 @@ test('configuration failure provides a safe support reference and recovers to gu
 test('wrong-account callback opens settings, displays rejection and removes the URL marker',async({page})=>{
   const panel=await open(page,401,{authenticated:false},'?auth=denied');
   await expect(panel.getByRole('alert')).toContainText('not authorized');
-  await expect(page).toHaveURL('http://127.0.0.1:3099/');
+  // The new route resolver preserves callback behavior at canonical /settings.
+  await expect(page).toHaveURL('http://127.0.0.1:3099/settings');
 });
 test('owner logout failure never reports signed out and a retry checks its true state',async({page})=>{
   const csrf='a'.repeat(43),expiresAt=new Date(Date.now()+600000).toISOString();let failed=false;

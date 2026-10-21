@@ -42,6 +42,8 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix backend --no-audit --no-fund
+      - name: Locked dependency advisory audit
+        run: npm audit --audit-level=low
       - name: Prepare isolated synthetic PostgreSQL
         run: |
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE neuralcore_api LOGIN PASSWORD 'synthetic-ci-role';"
@@ -81,12 +83,34 @@ jobs:
           grep -Fx 'CapabilityBoundingSet=CAP_SETUID CAP_SETGID' ops/systemd/neural-core-backup.service
           grep -Fx 'AmbientCapabilities=CAP_SETUID CAP_SETGID' ops/systemd/neural-core-backup.service
           grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
+      - name: Brain contracts, lifecycle, parity and design invariants
+        run: |
+          npm run test:brain
+          npm run lint
+          node scripts/check-parity.mjs
+      - name: Native V2 synthetic scale benchmark (disposable database)
+        env:
+          NCORE_V2_TEST_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_v2_benchmark_test
+          NCORE_V2_API_URL: postgresql://neuralcore_api:synthetic-ci-role@127.0.0.1:5432/ncore_v2_benchmark_test
+        run: |
+          mkdir -p test-results
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_v2_benchmark_test OWNER postgres;"
+          node backend/v2/benchmark.mjs docs/ui/evidence/native-performance.json
       - run: npm run typecheck
       - run: npm run build
       - name: Install isolated browser test runtime
         run: npx playwright install --with-deps chromium
-      - name: Owner authentication UI regression tests (synthetic responses only)
+      - name: Owner authentication, parity, XSS, protocol, responsive and accessibility browser tests (synthetic only)
         run: npm run test:auth-ui
+      - name: Retain synthetic QA evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: neural-brain-v2-synthetic-evidence
+          path: |
+            docs/ui/evidence/
+            test-results/
+          retention-days: 14
       - name: Ensure owner identity credentials are absent from browser bundles
         run: |
           if grep -R -E 'NCORE_GOOGLE_CLIENT_SECRET|NCORE_AUTH_REDIS_TOKEN|NCORE_AUTH_CSRF_SECRET|NCORE_GOOGLE_OWNER_SUB' .next/static/; then
