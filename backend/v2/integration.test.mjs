@@ -113,6 +113,94 @@ test('indexed retrieval, signed cursors, owner scopes, graph evidence and index 
   const same=(await engine.get(owner,a.noteId)).body,duplicate=await proposed(note(same));assert.equal(duplicate.duplicateOf,a.noteId);
   await assert.rejects(async()=>engine.review(owner,duplicate.proposalId,{decision:'verify',expectedRevision:0,proof:await proof(duplicate.proposalId,0)}),e=>e.code==='DUPLICATE_NOTE');
 });
+test('mixed proposal queue uses microsecond keysets, actionable defaults, signed scopes and bounded payload pages',async()=>{
+  const principalId=randomUUID(),token='nbv2_'+'g'.repeat(43);
+  await db.admin.query('INSERT INTO vault_principals(principal_id,owner_id,display_name,kind,role,scopes,token_hash) VALUES($1,$2,$3,$4,$5,$6,$7)',[principalId,other.ownerId,'SYNTH queue agent','agent','contributor',['read','type:reference'],hash(token)]);
+  const scoped=await engine.authenticate(token);
+  const states=['accepted','rejected','proposed','conflict'];
+  const expected=[];
+  try{
+    // Old historical rows sort before all reviewable work. A millisecond-only cursor
+    // loses many of these distinct timestamps; ties also exercise the UUID key.
+    for(let i=0;i<167;i++){
+      const proposalId=randomUUID(),state=states[i%4],kind=i%3?'reference':'project',author=i%2?principalId:other.principalId;
+      await db.admin.query(`INSERT INTO vault_proposals(proposal_id,owner_id,note_id,principal_id,base_revision,payload,payload_hash,idempotency_key,state,created_at)
+        VALUES($1,$2,$3,$4,0,$5,repeat('a',64),$6,$7,'2026-10-21T00:00:00Z'::timestamptz+($8::int*interval '1 microsecond'))`,
+        [proposalId,other.ownerId,randomUUID(),author,JSON.stringify(note('Synthetic queue '+i,{type:kind})), 'pagination-'+i,state,Math.floor(i/2)]);
+      expected.push({proposalId,state,kind,author});
+    }
+    const collect=async(who,options={})=>{const result=[];let cursor=null,first;
+      do{const page=await engine.proposals(who,{limit:7,...options,cursor});first??=page;
+        assert.ok(page.items.length<=7);assert.equal(page.partial,Boolean(page.nextCursor));result.push(...page.items);cursor=page.nextCursor;
+        assert.ok(result.length<=167);
+      }while(cursor);return {result,first};};
+    const queue=await collect(other);assert.equal(queue.result.length,expected.filter(x=>['proposed','conflict'].includes(x.state)).length);
+    assert.equal(new Set(queue.result.map(x=>x.proposal_id)).size,queue.result.length);
+    const all=await collect(other,{statuses:states});assert.equal(all.result.length,167);assert.equal(new Set(all.result.map(x=>x.proposal_id)).size,167);
+    for(const [i,item] of all.result.entries())if(i)assert.ok(new Date(item.created_at)>=new Date(all.result[i-1].created_at));
+    const references=await collect(scoped,{statuses:states});assert.deepEqual(new Set(references.result.map(x=>x.proposal_id)),new Set(expected.filter(x=>x.author===principalId&&x.kind==='reference').map(x=>x.proposalId)));
+    const filtered=await collect(other,{noteTypes:['project'],statuses:['conflict']});assert.equal(filtered.result.length,expected.filter(x=>x.kind==='project'&&x.state==='conflict').length);
+    const cursor=queue.first.nextCursor;assert.ok(cursor);
+    for(const [who,options] of [[owner,{}],[scoped,{}],[other,{statuses:states}],[other,{noteTypes:['project']}],[other,{limit:8}]])
+      await assert.rejects(()=>engine.proposals(who,{limit:7,cursor,...options}),e=>e.code==='INVALID_CURSOR');
+    await assert.rejects(()=>engine.list(other,{limit:7,cursor}),e=>e.code==='INVALID_CURSOR');
+    await assert.rejects(()=>engine.proposals(other,{limit:7,cursor:cursor+'x'}),e=>e.code==='INVALID_CURSOR');
+    await db.admin.query("UPDATE vault_principals SET scopes=ARRAY['read','type:project'] WHERE principal_id=$1",[principalId]);
+    await assert.rejects(()=>engine.proposals(scoped,{limit:7,statuses:states,cursor:references.first.nextCursor}),e=>e.code==='INVALID_CURSOR');
+    await db.admin.query('UPDATE vault_principals SET disabled_at=now() WHERE principal_id=$1',[principalId]);
+    await assert.rejects(()=>engine.proposals(scoped),e=>e.code==='UNAUTHORIZED');
+    await db.admin.query("UPDATE vault_principals SET disabled_at=NULL,scopes=ARRAY['read','type:reference'] WHERE principal_id=$1",[principalId]);
+    for(const options of [{limit:51},{statuses:[]},{statuses:['pending']},{statuses:states.concat('proposed')},{noteTypes:['*']},{noteTypes:'reference'}])
+      await assert.rejects(()=>engine.proposals(other,options),e=>['INVALID_QUERY','INVALID_LIMIT'].includes(e.code));
+    // A reviewed/deleted anchor does not invalidate chronological keyset progress.
+    await db.admin.query("UPDATE vault_proposals SET state='rejected' WHERE proposal_id=$1",[queue.first.items.at(-1).proposal_id]);
+    const continued=await engine.proposals(other,{limit:7,cursor});assert.ok(continued.items.length);assert.ok(continued.items.every(x=>!queue.first.items.some(y=>x.proposal_id===y.proposal_id)));
+    // An old row returning to conflict is reached on refresh, not a historical-first page.
+    await db.admin.query("UPDATE vault_proposals SET state='conflict' WHERE proposal_id=$1",[expected[0].proposalId]);
+    assert.equal((await engine.proposals(other,{limit:7})).items[0].proposal_id,expected[0].proposalId);
+    await db.admin.query('UPDATE vault_proposals SET payload=$1 WHERE owner_id=$2',[JSON.stringify(note('Synthetic large '.padEnd(180000,'x'),{type:'reference'})),other.ownerId]);
+    const big=await collect(other,{statuses:states});assert.equal(big.result.length,167);assert.equal(big.first.items.length,1);assert.ok(Buffer.byteLength(JSON.stringify(big.first))<262144);
+  }finally{
+    await db.admin.query("DELETE FROM vault_proposals WHERE owner_id=$1 AND idempotency_key LIKE 'pagination-%'",[other.ownerId]);
+    await db.admin.query('DELETE FROM vault_principals WHERE principal_id=$1',[principalId]);
+  }
+});
+test('verified graph projection remains SQL-owned after forged file links, aliases and evidence metadata',async()=>{
+  const target=await published(),unrelated=await published();
+  const source=await published(note('Synthetic approved links',{relations:[{targetId:target.noteId,type:'supports',evidenceOrdinal:0,confidence:.7}]}));
+  const file=source.noteId+'.md',original=await vault.read('owner',file),path=join(await vault.directory('owner'),file);
+  const {parseMarkdown}=await import('./note.mjs');assert.deepEqual(parseMarkdown(original.text).meta.brain_links,['[['+target.noteId+']]']);
+  // A syntactically valid but forged property and body link must not create SQL edges.
+  const changed=original.text.replaceAll(target.noteId,unrelated.noteId).replace('source_refs: [','source_refs: [').replace('state: "proposed"','state: "verified"')+'\n[['+unrelated.noteId+']]\n';
+  await writeFile(path,changed,{mode:0o600});const edit=await worker.reconcile(owner,file);assert.equal(edit.code,'EXTERNAL_EDIT_REVIEW');
+  const payload=(await db.admin.query('SELECT payload FROM vault_proposals WHERE proposal_id=$1',[edit.proposalId])).rows[0].payload;
+  assert.deepEqual(payload.relations,[{targetId:target.noteId,type:'supports',evidenceOrdinal:0,confidence:.7}]);
+  assert.deepEqual(payload.evidence,note().evidence);
+  await engine.review(owner,edit.proposalId,{decision:'publish-unverified',expectedRevision:1,proof:await proof(edit.proposalId,1)});await worker.once();
+  const next=parseMarkdown((await vault.read('owner',file)).text);assert.deepEqual(next.meta.brain_links,[]);assert.equal((await engine.get(owner,source.noteId)).trust,'proposed');
+  const edges=await engine.graph(owner,{focus:source.noteId,depth:1});assert.equal(edges.edges.length,1);assert.equal(edges.edges[0].target_id,target.noteId);
+});
+test('checkpoint rejects tombstone resurrection, scoped exports, missing SQL projections and quiescence drift',async()=>{
+  const target=await published(),file=target.noteId+'.md',bytes=(await vault.read('owner',file)).text;
+  const originalList=engine.list;engine.list=()=>{throw Error('Checkpoint must use bounded authoritative ledger, not the search projection');};
+  try{
+    await db.admin.query('DELETE FROM vault_search_documents WHERE note_id=$1',[target.noteId]);
+    const full=await checkpoint(engine,vault,owner,{snapshotId:'synthetic-checkpoint-full',quiesced:true});assert.ok(full.notes.some(x=>x.noteId===target.noteId));
+    await assert.rejects(()=>checkpoint(engine,vault,owner,{snapshotId:'synthetic-checkpoint-full',quiesced:'true'}),e=>e.code==='QUIESCED_SNAPSHOT_REQUIRED');
+    await db.admin.query("UPDATE vault_principals SET scopes=array_append(scopes,'type:project') WHERE principal_id=$1",[owner.principalId]);
+    await assert.rejects(()=>checkpoint(engine,vault,owner,{snapshotId:'synthetic-checkpoint-full',quiesced:true}),e=>e.code==='FULL_VAULT_SCOPE_REQUIRED');
+    await db.admin.query("UPDATE vault_principals SET scopes=array_remove(scopes,'type:project') WHERE principal_id=$1",[owner.principalId]);
+    await engine.tombstone(owner,target.noteId,{expectedRevision:1,proof:await proof('delete:'+target.noteId,1)});await worker.once();
+    await writeFile(join(await vault.directory('owner'),file),bytes,{mode:0o600});
+    await assert.rejects(()=>checkpoint(engine,vault,owner,{snapshotId:'synthetic-checkpoint-full',quiesced:true}),e=>e.code==='TOMBSTONED_FILE');await rm(join(await vault.directory('owner'),file));
+    const valid=await checkpoint(engine,vault,owner,{snapshotId:'synthetic-checkpoint-full',quiesced:true});assert.ok(valid.tombstones.some(x=>x.note_id===target.noteId));
+    const originalStamp=vault.inventoryStamp.bind(vault);let calls=0;vault.inventoryStamp=async who=>{const value=await originalStamp(who);return ++calls>2?value+'-drift':value;};
+    try{await assert.rejects(()=>checkpoint(engine,vault,owner,{snapshotId:'synthetic-checkpoint-full',quiesced:true}),e=>e.code==='VAULT_NOT_QUIESCENT');}finally{vault.inventoryStamp=originalStamp;}
+    const forged={...valid,notes:[...valid.notes,{noteId:target.noteId,revision:1,hash:hash(bytes)}]};const {sha256,...rest}=forged;forged.sha256=hash(JSON.stringify(rest));
+    assert.throws(()=>verifyCheckpoint(forged,forged),e=>e.code==='CHECKPOINT_MISMATCH');
+    await worker.rebuildIndex(owner);
+  }finally{engine.list=originalList;}
+});
 test('proposal queue backpressure rejects excess agent work without allocating revisions',async()=>{
   await db.admin.query("INSERT INTO vault_proposals(proposal_id,owner_id,principal_id,base_revision,payload,payload_hash,idempotency_key) SELECT gen_random_uuid(),'owner',$1::uuid,0,$2::jsonb,repeat('a',64),'synth-budget-'||i FROM generate_series(1,100) i",[agent2.principalId,JSON.stringify(note())]);
   try{await assert.rejects(()=>proposed(note(),agent2),e=>e.code==='PROPOSAL_QUEUE_FULL');}finally{await db.admin.query("DELETE FROM vault_proposals WHERE idempotency_key LIKE 'synth-budget-%'");}

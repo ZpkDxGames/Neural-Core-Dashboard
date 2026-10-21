@@ -115,7 +115,7 @@ export class MemoryEngine {
         n=(await db.query('SELECT * FROM vault_notes WHERE note_id=$1 FOR UPDATE',[proposal.note_id])).rows[0];
       }
       const now=new Date().toISOString(),revision=expectedRevision+1;
-      const markdown=serializeNote({noteId:n.note_id,revision,payload,createdAt:new Date(n.created_at).toISOString(),updatedAt:now,agentOrigin:proposal.principal_id});
+      const markdown=serializeNote({noteId:n.note_id,revision,payload,createdAt:new Date(n.created_at).toISOString(),updatedAt:now,agentOrigin:proposal.principal_id,approvedRelations:decision==='verify'});
       const contentHash=hash(markdown),verified=decision==='verify';
       await db.query(`INSERT INTO vault_revisions(owner_id,note_id,revision,base_revision,content_hash,markdown,payload,principal_id,proposal_id,verified_by,verified_at)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[p.ownerId,n.note_id,revision,expectedRevision,contentHash,markdown,JSON.stringify(payload),proposal.principal_id,proposalId,verified?p.principalId:null,verified?now:null]);
@@ -244,11 +244,41 @@ export class MemoryEngine {
       return {publication:r.rows,confirmedAt:new Date().toISOString(),gateway:'internal-only',remoteSynchronization:false};
     });
   }
-  async proposals(identity,{limit=25}={}){
-    if(!Number.isInteger(limit)||limit<1||limit>50)fail('INVALID_LIMIT',400);
-    return this.tx(async db=>{const p=await this.authorize(db,identity,'read');
-      const rows=await db.query("SELECT proposal_id,note_id,principal_id,base_revision,payload,state,duplicate_of,created_at FROM vault_proposals WHERE owner_id=$1 AND (cardinality($2::text[])=0 OR payload->>'type'=ANY($2)) AND ($4::boolean OR principal_id=$5) ORDER BY created_at,proposal_id LIMIT $3",[p.ownerId,types(p),limit+1,['owner','maintainer'].includes(p.role),p.principalId]);
-      return {items:rows.rows.slice(0,limit),partial:rows.rows.length>limit};
+  /** Oldest-first live review queue. Immutable microsecond timestamp + UUID keyset;
+   * refreshed traversal is required for older records entering a filtered state. */
+  async proposals(identity,{limit=25,cursor=null,statuses=['proposed','conflict'],noteTypes=[]}={}){
+    const filter=(values,allowed)=>{
+      if(!Array.isArray(values)||values.length>allowed.length||values.some(v=>!allowed.includes(v)))fail('INVALID_QUERY',400);
+      return [...new Set(values)].sort();
+    };
+    if(!Number.isInteger(limit)||limit<1||limit>LIMITS.page)fail('INVALID_LIMIT',400);
+    const states=filter(statuses,['proposed','conflict','accepted','rejected']);
+    const requestedTypes=filter(noteTypes,['fact','project','decision','reference']);
+    if(!states.length)fail('INVALID_QUERY',400);
+    return this.tx(async db=>{
+      const p=await this.authorize(db,identity,'read');
+      const scope=hash(JSON.stringify(['proposals-v1',p.ownerId,p.principalId,p.credentialHash,p.role,[...p.scopes].sort(),states,requestedTypes,limit]));
+      const after=this.decodeCursor(cursor,scope);
+      if(after&&(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(after.at)||!Number.isFinite(Date.parse(after.at))))fail('INVALID_CURSOR',400);
+      const result=await db.query(`SELECT proposal_id,note_id,principal_id,base_revision,payload,state,duplicate_of,created_at,
+        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+        FROM vault_proposals WHERE owner_id=$1 AND state=ANY($2::text[])
+        AND (cardinality($3::text[])=0 OR payload->>'type'=ANY($3))
+        AND (cardinality($4::text[])=0 OR payload->>'type'=ANY($4))
+        AND ($5::boolean OR principal_id=$6)
+        AND ($7::uuid IS NULL OR (created_at,proposal_id)>($8::timestamptz,$7::uuid))
+        ORDER BY created_at,proposal_id LIMIT $9`,
+        [p.ownerId,states,types(p),requestedTypes,['owner','maintainer'].includes(p.role),p.principalId,after?.id??null,after?.at??null,limit+1]);
+      // Large individual payloads must not make later reviews unreachable through a 413.
+      const items=[];let bytes=2,last;
+      for(const row of result.rows.slice(0,limit)){
+        const {cursor_at,...item}=row,size=Buffer.byteLength(JSON.stringify(item))+1;
+        if(bytes+size>LIMITS.response-4096)break;
+        bytes+=size;items.push(item);last={id:row.proposal_id,at:cursor_at};
+      }
+      if(result.rows.length&&!items.length)fail('RESPONSE_BUDGET_EXCEEDED',413);
+      const partial=result.rows.length>items.length;
+      return {items,nextCursor:partial?this.encodeCursor({scope,...last,rank:0}):null,partial};
     });
   }
   async agents(identity){return this.tx(async db=>{const p=await this.authorize(db,identity,'read');if(p.role!=='owner')fail('ROLE_FORBIDDEN',403);return (await db.query('SELECT principal_id,display_name,kind,role,scopes,disabled_at FROM vault_principals WHERE owner_id=$1 ORDER BY principal_id LIMIT 50',[p.ownerId])).rows;});}

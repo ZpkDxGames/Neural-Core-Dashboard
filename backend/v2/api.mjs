@@ -15,6 +15,14 @@ const query=url=>{
   const raw=url.searchParams.get('limit')??'25';if(!/^\d{1,3}$/.test(raw))fail('INVALID_LIMIT',400);
   return {limit:Number(raw),cursor:url.searchParams.get('cursor'),q:url.searchParams.get('q')??''};
 };
+const proposalQuery=url=>{
+  const allowed=new Set(['limit','cursor','status','type']);
+  if([...url.searchParams.keys()].some(k=>!allowed.has(k))||['limit','cursor'].some(k=>url.searchParams.getAll(k).length>1))fail('INVALID_QUERY',400);
+  const statuses=url.searchParams.getAll('status'),noteTypes=url.searchParams.getAll('type');
+  if(statuses.length>4||noteTypes.length>4)fail('INVALID_QUERY',400);
+  const {limit,cursor}=query(url);
+  return {limit,cursor,...(statuses.length?{statuses}:{}),noteTypes};
+};
 /** No listener, global token or environment gate. Production server does not import this module.
  * A future approved local composition root must explicitly enable it and supply the engine. */
 export function makeV2Handler({engine,enabled=false,maxActive=2,quota=60,clock=()=>Date.now()}={}){
@@ -37,7 +45,7 @@ export function makeV2Handler({engine,enabled=false,maxActive=2,quota=60,clock=(
       const url=new URL(req.url,'http://localhost'),path=url.pathname,method=req.method;
       let result,status=200;
       if(path==='/v2/memories/proposals'&&method==='POST'){result=await engine.submit(p,await body(req),req.headers['idempotency-key']);status=result.replayed?200:201;}
-      else if(path==='/v2/memories/proposals'&&method==='GET')result=await engine.proposals(p,query(url));
+      else if(path==='/v2/memories/proposals'&&method==='GET')result=await engine.proposals(p,proposalQuery(url));
       else if(/^\/v2\/proposals\/[^/]+\/review$/.test(path)&&method==='POST'){
         const input=await body(req);result=await engine.review(p,path.split('/')[3],{decision:input.decision,expectedRevision:revision(req),proof:req.headers['x-owner-proof']});
       }

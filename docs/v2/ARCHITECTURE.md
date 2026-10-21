@@ -37,3 +37,7 @@ Owner deletion hides a curated note immediately, drops its projection and queues
 ## Browser boundary
 
 The rebuilt UI wraps existing IndexedDB/import logic and consumes a default unavailable vault port. It may show explicit synthetic demonstrations with a persistent demo banner. No fake/test adapter is reachable from production, and no UI feature can enable synchronization or grant owner permissions. Existing Google OIDC routes remain independent and unchanged.
+
+## Independent audit remediation
+
+See [REMEDIATION_CONTRACTS.md](REMEDIATION_CONTRACTS.md) for signed actionable proposal pagination, owner-verified native Obsidian property links and single-walk offline checkpoints capped at 10,000 entries. Full 100k physical-file checkpoint certification is explicitly blocked. See [PRIVATE_STAGING_CONTRACTS.md](PRIVATE_STAGING_CONTRACTS.md) for the architecture-only private gateway, fresh owner proof and agent provisioning plan; none is activated.
