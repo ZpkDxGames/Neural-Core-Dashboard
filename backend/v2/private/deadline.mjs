@@ -34,7 +34,6 @@ export async function boundedDependency(fn, maxMs = 2000) {
           },
           Math.max(1, Math.min(maxMs, remaining)),
         );
-        timer.unref();
       }),
     ]);
   } finally {

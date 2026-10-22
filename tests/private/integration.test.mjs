@@ -160,6 +160,7 @@ before(async () => {
   const vault = new FileVault(root);
   await vault.initialise();
   worker = new VaultWorker(engine, vault, { retryDelayMs: 0 });
+  authority.worker = worker;
 });
 beforeEach(async () => {
   await db.admin.query("DELETE FROM vault_private_quota");
@@ -655,7 +656,14 @@ test("scoped synthetic provisioning, secret-delivery rollback, idempotent retry,
     [principalId],
   );
   for (const decision of ["rotate-agent", "revoke-agent"]) {
-    const priorCursor=decision==="rotate-agent"?(await engine.list(await engine.authenticate(agentToken),{limit:1})).nextCursor:null;
+    const priorCursor =
+      decision === "rotate-agent"
+        ? (
+            await engine.list(await engine.authenticate(agentToken), {
+              limit: 1,
+            })
+          ).nextCursor
+        : null;
     const epoch = (
         await db.admin.query(
           "SELECT permission_epoch FROM vault_principals WHERE principal_id=$1",
@@ -688,7 +696,11 @@ test("scoped synthetic provisioning, secret-delivery rollback, idempotent retry,
       );
       agentToken = secrets.get(done.body.data.credentialHandle);
       agent = await engine.authenticate(agentToken);
-      assert.ok(priorCursor);await assert.rejects(()=>engine.list(agent,{limit:1,cursor:priorCursor}),e=>e.code==="INVALID_CURSOR");
+      assert.ok(priorCursor);
+      await assert.rejects(
+        () => engine.list(agent, { limit: 1, cursor: priorCursor }),
+        (e) => e.code === "INVALID_CURSOR",
+      );
     }
   }
   await assert.rejects(
@@ -982,15 +994,133 @@ test("lost completion response is recovered from a durable receipt; expired chal
   assert.equal((await complete(expired)).status, 403);
 });
 
-test('request deadline rolls back SQL and expired grants cannot promote a proposal',async()=>{
- const {privateRequestScope}=await import('../../backend/v2/private/deadline.mjs');const target=randomUUID();
- await assert.rejects(()=>privateRequestScope.run({deadlineAt:Date.now()+5000},()=>engine.tx(async client=>{
-  await client.query("INSERT INTO vault_actions(action_id,owner_id,principal_id,action,target_id,outcome) VALUES($1,$2,$3,'synthetic-deadline',$4,'pending')",[randomUUID(),ownerId,context.principalId,target]);
-  privateRequestScope.getStore().deadlineAt=Date.now()-1;
- })),e=>e.code==='PRIVATE_REQUEST_TIMEOUT');
- assert.equal((await db.admin.query('SELECT 1 FROM vault_actions WHERE target_id=$1',[target])).rows.length,0);
- const proposed=await proposal(),c=await challenge(proposed);await fresh(c);const proof=randomBytes(32).toString('base64url');await db.issuerPool.query('SELECT vault_issue_bound_grant($1,$2)',[c.challengeId,hash(proof)]);
- await db.admin.query("UPDATE vault_review_grants SET issued_at=now()-interval '120 seconds',expires_at=now()-interval '61 seconds' WHERE proof_hash=$1",[hash(proof)]);
- await assert.rejects(()=>engine.review(owner,proposed.proposalId,{decision:'verify',expectedRevision:0,proof}),e=>e.code==='OWNER_PROOF_INVALID');
- assert.equal((await db.admin.query('SELECT state FROM vault_proposals WHERE proposal_id=$1',[proposed.proposalId])).rows[0].state,'proposed');
+test("request deadline rolls back SQL and expired grants cannot promote a proposal", async () => {
+  const { privateRequestScope } =
+    await import("../../backend/v2/private/deadline.mjs");
+  const target = randomUUID();
+  await assert.rejects(
+    () =>
+      privateRequestScope.run({ deadlineAt: Date.now() + 5000 }, () =>
+        engine.tx(async (client) => {
+          await client.query(
+            "INSERT INTO vault_actions(action_id,owner_id,principal_id,action,target_id,outcome) VALUES($1,$2,$3,'synthetic-deadline',$4,'pending')",
+            [randomUUID(), ownerId, context.principalId, target],
+          );
+          privateRequestScope.getStore().deadlineAt = Date.now() - 1;
+        }),
+      ),
+    (e) => e.code === "PRIVATE_REQUEST_TIMEOUT",
+  );
+  assert.equal(
+    (
+      await db.admin.query("SELECT 1 FROM vault_actions WHERE target_id=$1", [
+        target,
+      ])
+    ).rows.length,
+    0,
+  );
+  const proposed = await proposal(),
+    c = await challenge(proposed);
+  await fresh(c);
+  const proof = randomBytes(32).toString("base64url");
+  await db.issuerPool.query("SELECT vault_issue_bound_grant($1,$2)", [
+    c.challengeId,
+    hash(proof),
+  ]);
+  await db.admin.query(
+    "UPDATE vault_review_grants SET issued_at=now()-interval '120 seconds',expires_at=now()-interval '61 seconds' WHERE proof_hash=$1",
+    [hash(proof)],
+  );
+  await assert.rejects(
+    () =>
+      engine.review(owner, proposed.proposalId, {
+        decision: "verify",
+        expectedRevision: 0,
+        proof,
+      }),
+    (e) => e.code === "OWNER_PROOF_INVALID",
+  );
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT state FROM vault_proposals WHERE proposal_id=$1",
+        [proposed.proposalId],
+      )
+    ).rows[0].state,
+    "proposed",
+  );
+});
+
+test("fresh action-specific deletion, consolidation and interrupted-publication repair preserve V2 capabilities under 004", async () => {
+  const publish = async () => {
+    const p = await proposal(),
+      c = await challenge(p);
+    await fresh(c);
+    const r = await complete(c);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    await worker.once();
+    return { ...p, revision: 1 };
+  };
+  const target = await publish(),
+    source = await publish();
+  const decide = async (action, subjectId, revision, intent) => {
+    const r = await call("POST", "/v2/private/review-challenges", {
+      subjectId,
+      expectedRevision: revision,
+      decision: action,
+      intentSha256: hash(JSON.stringify(intent)),
+      permissionRequest: intent,
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    await fresh(r.body.data);
+    const ack = await complete(r.body.data);
+    assert.equal(ack.status, 200, JSON.stringify(ack.body));
+    return ack;
+  };
+  const consolidated = await decide("consolidate", source.noteId, 1, {
+    noteId: source.noteId,
+    expectedRevision: 1,
+    consolidateInto: target.noteId,
+  });
+  assert.equal(consolidated.body.data.state, "pending");
+  await worker.once();
+  await assert.rejects(
+    () => engine.get(owner, source.noteId),
+    (e) => e.code === "NOT_FOUND",
+  );
+  assert.equal((await engine.get(owner, target.noteId)).revision, 1);
+  const p = await engine.submit(
+      owner,
+      { noteId: target.noteId, baseRevision: 1, note: note() },
+      randomUUID(),
+    ),
+    c = await challenge(p);
+  await fresh(c);
+  const pending = await complete(c);
+  assert.equal(pending.status, 200);
+  await rm(join(await worker.vault.directory(ownerId), target.noteId + ".md"));
+  assert.equal((await worker.once()).state, "conflict");
+  const event = (
+    await db.admin.query("SELECT * FROM vault_outbox WHERE event_id=$1", [
+      pending.body.data.eventId,
+    ])
+  ).rows[0];
+  await decide("repair", event.event_id, 2, {
+    eventId: event.event_id,
+    expectedRevision: 2,
+    expectedHash: event.expected_hash?.trim() ?? null,
+  });
+  assert.equal((await worker.once()).state, "committed");
+  assert.equal((await engine.get(owner, target.noteId)).revision, 2);
+  const deleted = await decide("delete", target.noteId, 2, {
+    noteId: target.noteId,
+    expectedRevision: 2,
+    consolidateInto: null,
+  });
+  assert.equal(deleted.body.data.tombstoned, true);
+  await worker.once();
+  await assert.rejects(
+    () => engine.get(owner, target.noteId),
+    (e) => e.code === "NOT_FOUND",
+  );
 });

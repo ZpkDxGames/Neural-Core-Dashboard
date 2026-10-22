@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { VaultWorker } from "../worker.mjs";
 import { PrivateMemoryEngine } from "./engine.mjs";
 import { fail, hash, uuid } from "../note.mjs";
 import { fields } from "./validation.mjs";
@@ -57,6 +58,7 @@ export class PrivateAuthority {
     issuerPool,
     verifyOnline,
     secretSink,
+    worker = null,
     clock = () => Date.now(),
   }) {
     if (typeof verifyOnline !== "function")
@@ -65,6 +67,7 @@ export class PrivateAuthority {
     this.issuerPool = issuerPool;
     this.verifyOnline = verifyOnline;
     this.secretSink = secretSink;
+    this.worker = worker;
     this.clock = clock;
   }
   async tx(fn) {
@@ -221,6 +224,9 @@ export class PrivateAuthority {
         "verify",
         "publish-unverified",
         "reject",
+        "delete",
+        "consolidate",
+        "repair",
         "provision-agent",
         "rotate-agent",
         "revoke-agent",
@@ -280,6 +286,87 @@ export class PrivateAuthority {
           decision: input.decision,
           expectedRevision: input.expectedRevision,
         };
+      } else if (["delete", "consolidate"].includes(input.decision)) {
+        await this.engine.authorize(db, p, "delete");
+        fields(input.permissionRequest, [
+          "noteId",
+          "expectedRevision",
+          "consolidateInto",
+        ]);
+        const request = input.permissionRequest;
+        if (
+          request.noteId !== input.subjectId ||
+          request.expectedRevision !== input.expectedRevision ||
+          (input.decision === "delete" && request.consolidateInto !== null) ||
+          (input.decision === "consolidate" && !uuid(request.consolidateInto))
+        )
+          fail("INVALID_DELETION", 400);
+        const note = (
+          await db.query(
+            "SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2",
+            [p.ownerId, input.subjectId],
+          )
+        ).rows[0];
+        if (
+          !note ||
+          note.deleted_at ||
+          note.current_revision !== input.expectedRevision ||
+          note.published_revision !== input.expectedRevision
+        )
+          fail("REVISION_CONFLICT", 409);
+        if (request.consolidateInto) {
+          const target = (
+            await db.query(
+              "SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2 AND deleted_at IS NULL AND published_revision>0",
+              [p.ownerId, request.consolidateInto],
+            )
+          ).rows[0];
+          if (!target || target.note_id === note.note_id)
+            fail("INVALID_CONSOLIDATION", 400);
+        }
+        intent = {
+          noteId: input.subjectId,
+          expectedRevision: input.expectedRevision,
+          consolidateInto: request.consolidateInto,
+        };
+        if (hash(JSON.stringify(intent)) !== input.intentSha256)
+          fail("STALE_INTENT", 409);
+      } else if (input.decision === "repair") {
+        if (!this.worker) fail("REPAIR_UNAVAILABLE", 503);
+        fields(input.permissionRequest, [
+          "eventId",
+          "expectedRevision",
+          "expectedHash",
+        ]);
+        const event = (
+          await db.query(
+            "SELECT * FROM vault_outbox WHERE owner_id=$1 AND event_id=$2",
+            [p.ownerId, input.subjectId],
+          )
+        ).rows[0];
+        if (!event || !["failed", "conflict"].includes(event.state))
+          fail("REVISION_CONFLICT", 409);
+        const note = (
+          await db.query(
+            "SELECT current_revision FROM vault_notes WHERE owner_id=$1 AND note_id=$2",
+            [p.ownerId, event.note_id],
+          )
+        ).rows[0];
+        intent = {
+          eventId: input.subjectId,
+          expectedRevision: input.expectedRevision,
+          expectedHash: event.expected_hash?.trim() ?? null,
+        };
+        if (
+          !note ||
+          note.current_revision !== input.expectedRevision ||
+          hash(JSON.stringify(intent)) !== input.intentSha256 ||
+          input.permissionRequest.eventId !== intent.eventId ||
+          input.permissionRequest.expectedRevision !==
+            intent.expectedRevision ||
+          input.permissionRequest.expectedHash !== intent.expectedHash
+        )
+          fail("STALE_INTENT", 409);
       } else if (input.decision === "provision-agent") {
         if (input.expectedRevision !== 0) fail("INVALID_AGENT_GRANT", 400);
         intent = agentIntent(input.permissionRequest);
@@ -437,16 +524,39 @@ export class PrivateAuthority {
       if (["verify", "publish-unverified", "reject"].includes(c.action)) {
         const proposal = (
           await db.query(
-            "SELECT payload,payload_hash FROM vault_proposals WHERE proposal_id=$1 AND owner_id=$2",
+            "SELECT p.payload,p.payload_hash,n.deleted_at FROM vault_proposals p LEFT JOIN vault_notes n ON n.note_id=p.note_id WHERE p.proposal_id=$1 AND p.owner_id=$2",
             [c.subject_id, p.ownerId],
           )
         ).rows[0];
         if (!proposal || proposal.payload_hash.trim() !== c.intent_hash.trim())
           fail("STALE_INTENT", 409);
-        preview = {
-          title: proposal.payload.title,
-          body: proposal.payload.body,
-        };
+        if (!proposal.deleted_at)
+          preview = {
+            title: proposal.payload.title,
+            body: proposal.payload.body,
+          };
+      }
+      if (["delete", "consolidate", "repair"].includes(c.action)) {
+        const key =
+          c.action === "repair"
+            ? (
+                await db.query(
+                  "SELECT note_id FROM vault_outbox WHERE event_id=$1 AND owner_id=$2",
+                  [c.subject_id, p.ownerId],
+                )
+              ).rows[0]?.note_id
+            : c.subject_id;
+        const revision = (
+          await db.query(
+            "SELECT r.payload FROM vault_revisions r JOIN vault_notes n ON n.note_id=r.note_id WHERE r.note_id=$1 AND r.owner_id=$2 AND r.revision=$3 AND n.deleted_at IS NULL",
+            [key, p.ownerId, c.expected_revision],
+          )
+        ).rows[0];
+        if (revision)
+          preview = {
+            title: revision.payload.title,
+            body: revision.payload.body,
+          };
       }
       return {
         challengeId: id,
@@ -484,7 +594,23 @@ export class PrivateAuthority {
           expectedRevision: c.expected_revision,
           proof,
         });
-      else {
+      else if (["delete", "consolidate"].includes(c.action))
+        receipt = {
+          ...(await e.tombstone(p, c.subject_id, {
+            expectedRevision: c.expected_revision,
+            proof,
+            consolidateInto: c.intent.consolidateInto,
+          })),
+          state: "pending",
+        };
+      else if (c.action === "repair") {
+        if (!this.worker) fail("REPAIR_UNAVAILABLE", 503);
+        receipt = await new VaultWorker(e, this.worker.vault).repair(
+          p,
+          c.subject_id,
+          { expectedRevision: c.expected_revision, proof },
+        );
+      } else {
         await e.authorize(db, p, "review");
         if (
           c.action !== "revoke-agent" &&

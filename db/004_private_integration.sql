@@ -44,7 +44,7 @@ CREATE TABLE vault_owner_challenges(
  principal_id uuid NOT NULL REFERENCES vault_principals(principal_id),
  session_ref_hash char(64) NOT NULL REFERENCES vault_private_sessions(session_ref_hash),
  identity_hash char(64) NOT NULL,
- action text NOT NULL CHECK(action IN ('verify','publish-unverified','reject','provision-agent','rotate-agent','revoke-agent')),
+ action text NOT NULL CHECK(action IN ('verify','publish-unverified','reject','delete','consolidate','repair','provision-agent','rotate-agent','revoke-agent')),
  subject_id text NOT NULL CHECK(length(subject_id) BETWEEN 1 AND 160),
  expected_revision integer NOT NULL CHECK(expected_revision>=0),
  intent_hash char(64) NOT NULL CHECK(intent_hash ~ '^[0-9a-f]{64}$'),

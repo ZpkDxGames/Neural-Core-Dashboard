@@ -81,6 +81,12 @@ export class PrivateMemoryEngine extends MemoryEngine {
     expected,
     { action, intentHash } = {},
   ) {
+    if (["delete", "consolidate", "repair"].includes(action)) {
+      const prefix = action + ":";
+      if (typeof subject !== "string" || !subject.startsWith(prefix))
+        fail("OWNER_PROOF_INVALID", 403);
+      subject = subject.slice(prefix.length);
+    }
     const a = p.authorization;
     if (
       !a ||

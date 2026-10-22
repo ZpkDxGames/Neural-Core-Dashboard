@@ -330,7 +330,11 @@ export function RemoteReview() {
     <>
       <SectionHeading
         title="Owner review queue"
-        action={<Link className="nb-button" href="/agents?tab=identities">Private identity registry</Link>}
+        action={
+          <Link className="nb-button" href="/agents?tab=identities">
+            Private identity registry
+          </Link>
+        }
         description="Each decision requires fresh Google authentication followed by explicit confirmation. Agents cannot approve memories."
       />
       {!p.connected ? (
@@ -576,7 +580,11 @@ export function RemoteRegistry() {
     <>
       <SectionHeading
         title="Private identity registry"
-        action={<Link className="nb-button" href="/agents">Owner review queue</Link>}
+        action={
+          <Link className="nb-button" href="/agents">
+            Owner review queue
+          </Link>
+        }
         description="Owner identities and scoped synthetic agents have separate authority. No real provider is connected."
       />
       {!p.connected ? (

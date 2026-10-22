@@ -191,7 +191,7 @@ export class MemoryEngine {
     return this.tx(async db=>{
       const p=await this.authorize(db,identity,'delete');
       const n=(await db.query('SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2 FOR UPDATE',[p.ownerId,noteId])).rows[0];
-      if(!n)fail('NOT_FOUND',404);if(n.deleted_at)return {noteId,tombstoned:true,replayed:true};
+      if(!n)fail('NOT_FOUND',404);if(n.deleted_at){if(p.permissionEpoch!==undefined)await this.consumeProof(db,p,proof,(consolidateInto?'consolidate:':'delete:')+noteId,expectedRevision,{action:consolidateInto?'consolidate':'delete',intentHash:hash(JSON.stringify({noteId,expectedRevision,consolidateInto}))});return {noteId,tombstoned:true,replayed:true};}
       if(n.current_revision!==expectedRevision||n.published_revision!==expectedRevision)fail('REVISION_CONFLICT',409);
       if(consolidateInto){
         const target=(await db.query('SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2 AND deleted_at IS NULL AND published_revision>0',[p.ownerId,consolidateInto])).rows[0];
@@ -266,6 +266,7 @@ export class MemoryEngine {
       const result=await db.query(`SELECT proposal_id,note_id,principal_id,base_revision,payload,payload_hash,state,duplicate_of,created_at,
         to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
         FROM vault_proposals WHERE owner_id=$1 AND state=ANY($2::text[])
+        AND NOT EXISTS(SELECT 1 FROM vault_notes withdrawn WHERE withdrawn.note_id=vault_proposals.note_id AND withdrawn.deleted_at IS NOT NULL)
         AND (cardinality($3::text[])=0 OR payload->>'type'=ANY($3))
         AND (cardinality($4::text[])=0 OR payload->>'type'=ANY($4))
         AND ($5::boolean OR principal_id=$6)
