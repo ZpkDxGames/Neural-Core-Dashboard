@@ -1831,6 +1831,7 @@ test("concurrent restricted SQL rotations recheck the approved epoch after the p
     try {
       const until = Date.now() + 2000;
       while (Date.now() < until) {
+        await db.admin.query("SELECT pg_stat_clear_snapshot()");
         const n = (
           await db.admin.query(
             "SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT vault_apply_synthetic_agent%' ",
