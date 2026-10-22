@@ -1,6 +1,9 @@
 "use client";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import {useSearchParams} from "next/navigation";
+import {usePrivateMemory} from "../PrivateMemoryProvider";
+import {RemoteGraph} from "../PrivateWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
@@ -40,7 +43,7 @@ const ThreeGraph = dynamic(() => import("./webgl/ThreeGraph"), {
   loading: () => <p className="nb-helper">Loading optional 3D renderer…</p>,
 });
 type Mode = "map" | "neighborhood" | "list" | "hierarchy";
-export function Graph({
+function LocalGraph({
   demo = false,
   focus,
   initialMode = "map",
@@ -817,3 +820,5 @@ function GraphInspector({
     </div>
   );
 }
+
+export function Graph(props:{demo?:boolean;focus?:string;initialMode?:string}){const p=usePrivateMemory(),params=useSearchParams();return p.configured&&params.get("remote")==="1"?<RemoteGraph focus={props.focus}/>:<LocalGraph {...props}/>;}

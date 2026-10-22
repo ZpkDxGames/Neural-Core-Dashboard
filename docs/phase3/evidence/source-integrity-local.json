@@ -1,0 +1,31 @@
+{
+  "base": "268038530cfc20dbeec4a6b1404d91e5dd4cddaf",
+  "base_tree": "e74afde3abae9b13855b66d3a57d3e5c4e73b8bf",
+  "main": "75157ad2d60e337a326a1d459496bedfba4a0fab",
+  "preview": "525dcb070c158e6cb485785ba659d0d114b9a30f",
+  "preserved": {
+    "db/001_init.sql": "bdfc05a64188accae3dcc374d4f7f485b7b70e8e60c2738d7efe0154d4c22bde",
+    "db/002_phase_1b.sql": "2fe57a7b4549469e6023673c13a8d9b70e56525d67e0f59d9d63b2bd3898d8a5",
+    "db/003_vault_v2.sql": "05ad35a1dc8b6f037ac73bc611a664f98f9107203bab7028199234e8cde74957",
+    "backend/server.mjs": "859de7830260cd8db2fe3b86002580f551b83d1ac2b1051df35574fe8bde6a05",
+    "backend/core-server.mjs": "a5a28e705867af27c74485b2a5ff83323ddb6d72cc5e33480adaf5e0d50cfc13",
+    "lib/store.ts": "0f7eaa955e29c0dac7a9f1c998c4c1024ef6ff40e707946285aa1c5cc2e0a5c9",
+    "backend/v2/checkpoint.mjs": "ef32ea9d1b18f164ab300774361b3ef6a1fbabebf40a51fb3c6d1b772538a159"
+  },
+  "original_browser_test_files_unchanged": [
+    "tests/browser/graphics.spec.mjs",
+    "tests/browser/markdown.spec.mjs",
+    "tests/browser/owner-auth.spec.mjs",
+    "tests/browser/performance.spec.mjs",
+    "tests/browser/protocol.spec.mjs",
+    "tests/browser/v2.spec.mjs",
+    "tests/browser/visual.spec.mjs"
+  ],
+  "dependency_heads": {
+    "4": "30399e771b1a07a62c882e31327d61530b54eed6",
+    "5": "b73566cc8a6ccae45438c3e7488a413e2bbbbbd0",
+    "6": "525dcb070c158e6cb485785ba659d0d114b9a30f",
+    "7": "87a72ed4a309bf560f164c44757b0ff7937fd5ff",
+    "8": "268038530cfc20dbeec4a6b1404d91e5dd4cddaf"
+  }
+}

@@ -1783,3 +1783,5 @@ td {
     display: block;
   }
 }
+
+.nb-private-graph { position: relative; height: clamp(380px, 60vh, 720px); border: 1px solid var(--nb-line); border-radius: var(--nb-r-lg); overflow: hidden; }

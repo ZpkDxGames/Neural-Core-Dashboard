@@ -1,0 +1,11 @@
+# Phase 3 source and dependency report
+
+The uploaded 397-entry candidate ZIP passed CRC and all 396 manifest SHA-256 entries. Its 195 tracked source files exactly matched GitHub PR #8's current tree `e74afde3abae9b13855b66d3a57d3e5c4e73b8bf` at `268038530cfc20dbeec4a6b1404d91e5dd4cddaf`. Current #4–#8 metadata and all development branch heads were retrieved before modification. All five dependent PRs were open drafts with the documented ancestry. The isolated feature branch starts at #8; no dependency branch is overwritten.
+
+Main: `75157ad2d60e337a326a1d459496bedfba4a0fab`. Preview/#6: `525dcb070c158e6cb485785ba659d0d114b9a30f`. #4: `30399e771b1a07a62c882e31327d61530b54eed6`. #5: `b73566cc8a6ccae45438c3e7488a413e2bbbbbd0`. #7: `87a72ed4a309bf560f164c44757b0ff7937fd5ff`. #8: `268038530cfc20dbeec4a6b1404d91e5dd4cddaf` targeting #7. The source integrity evidence records these values and byte hashes for preserved boundaries.
+
+Changed areas: new db/004 migration and explicit migration function; gateway/request validation/assertions/transport/deadlines/private engine/issuer; shared owner-session validation extraction and optional fresh Google provider mode; server-only BFF/runtime/routes; typed defensive adapter and owner-aware UI contracts; opt-in private provider/views and narrow existing-page integration; synthetic security/integration/browser tests; CI steps, documentation and evidence.
+
+Preserved byte-for-byte: migrations 001–003, production backend/server.mjs and core-server.mjs, local IndexedDB library, checkpoint implementation/cap and all seven original browser test files. The existing default unavailable adapter's implementation remains; only its review result type is expanded. Owner login behavior is covered by the unchanged original auth tests. Root/backend locked dependency versions are unchanged; package.json changes only add test scripts. No production environment, hosting, DNS, Caddy, Cloudflare, database, real credential/provider or Minecraft/PlexonPanel service was changed.
+
+See the archive source diff for exact file changes. Native CI and final review branch/PR details are appended once published. No deployment ref was asserted: the connector disallowed its deployment-record endpoint and the task forbids deployment work.

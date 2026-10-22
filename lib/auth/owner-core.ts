@@ -10,7 +10,7 @@ export type OwnerConfig = {
   csrfSecret: string;
 };
 export type Flow = { binding: string; nonce: string; verifier: string; state: string; expiresAt: number };
-export type Identity = { sub?: unknown; email_verified?: unknown; email?: unknown };
+export type Identity = { sub?: unknown; email_verified?: unknown; email?: unknown; auth_time?: unknown };
 export type Session = { sub: string; expiresAt: number; issuedAt: number; family: string };
 type Family = { sub: string; expiresAt: number };
 export type AuthEvent = 'AUTH_STORAGE_UNAVAILABLE' | 'GOOGLE_PROVIDER_UNAVAILABLE' |
@@ -146,6 +146,23 @@ function validFlow(flow: Flow | null, now: number): flow is Flow {
     Number.isSafeInteger(flow.expiresAt) && flow.expiresAt>now);
 }
 
+export const ownerStorePrefix=(config:OwnerConfig):string=>PREFIX+digest(config.origin+'|'+config.clientId+'|'+config.ownerSub)+':';
+export const ownerStoreKey=(config:OwnerConfig,category:string,token:string):string=>ownerStorePrefix(config)+category+':'+digest(token);
+export async function readAuthorizedOwnerSession(req:Request,config:OwnerConfig,store:Store,clock=Date.now){
+    const token=parsedCookie(req,SESSION_COOKIE);
+    if (!token) return null;
+    const saved=await store.get<Session>(ownerStoreKey(config,'session',token));
+    if (!saved || saved.sub!==config.ownerSub ||
+      !Number.isSafeInteger(saved.expiresAt) || saved.expiresAt<=clock() ||
+      !Number.isSafeInteger(saved.issuedAt) || saved.issuedAt>clock() ||
+      saved.issuedAt<0 || saved.expiresAt-saved.issuedAt>SESSION_TTL*1000 ||
+      typeof saved.family!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(saved.family)) return null;
+    const family=await store.get<Family>(ownerStoreKey(config,'family',saved.family));
+    if(!family || family.sub!==config.ownerSub || family.expiresAt!==saved.expiresAt)return null;
+    return {token,saved};
+
+}
+
 export function ownerController({config, store, provider, clock = Date.now, report = ()=>{}}: {
   config:OwnerConfig; store:Store; provider:OidcProvider; clock?:()=>number; report?:(event:AuthEvent)=>void
 }) {
@@ -158,19 +175,7 @@ export function ownerController({config, store, provider, clock = Date.now, repo
     report(event);
     return result(503,{error:'AUTH_UNAVAILABLE',reason:event==='AUTH_STORAGE_UNAVAILABLE'?'storage':'provider'},cookies);
   };
-  const authorizedSession = async(req:Request) => {
-    const token=parsedCookie(req,SESSION_COOKIE);
-    if (!token) return null;
-    const saved=await store.get<Session>(key('session',token));
-    if (!saved || saved.sub!==config.ownerSub ||
-      !Number.isSafeInteger(saved.expiresAt) || saved.expiresAt<=clock() ||
-      !Number.isSafeInteger(saved.issuedAt) || saved.issuedAt>clock() ||
-      saved.issuedAt<0 || saved.expiresAt-saved.issuedAt>SESSION_TTL*1000 ||
-      typeof saved.family!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(saved.family)) return null;
-    const family=await store.get<Family>(key('family',saved.family));
-    if(!family || family.sub!==config.ownerSub || family.expiresAt!==saved.expiresAt)return null;
-    return {token,saved};
-  };
+  const authorizedSession = (req:Request) => readAuthorizedOwnerSession(req,config,store,clock);
   const requireCsrf = (req:Request, token:string): boolean => exactOrigin(req,config.origin) &&
       safeEqual(req.headers.get('x-ncore-csrf'),csrfToken(config.csrfSecret,token));
   return {

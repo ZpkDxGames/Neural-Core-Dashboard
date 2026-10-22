@@ -1,0 +1,184 @@
+{
+  "at": "2026-10-22T02:53:27.317Z",
+  "runtime": {
+    "node": "v24.19.0",
+    "browser": "153.0.8010.0",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "cpus": 9,
+    "memory": 10451439616,
+    "graphics": "headless software SwiftShader"
+  },
+  "fixture": {
+    "sources": 5000,
+    "messages": 5000,
+    "searchSamples": 20,
+    "graphRouteCycles": 10
+  },
+  "coldReadyMs": 219.583888,
+  "rootMetrics": {
+    "navigation": {
+      "name": "http://127.0.0.1:3099/",
+      "entryType": "navigation",
+      "startTime": 0,
+      "duration": 170,
+      "navigationId": 1785,
+      "initiatorType": "navigation",
+      "deliveryType": "",
+      "nextHopProtocol": "http/1.1",
+      "renderBlockingStatus": "non-blocking",
+      "contentType": "text/html",
+      "contentEncoding": "gzip",
+      "workerStart": 0,
+      "workerRouterEvaluationStart": 0,
+      "workerCacheLookupStart": 0,
+      "workerMatchedSourceType": "",
+      "workerFinalSourceType": "",
+      "redirectStart": 0,
+      "redirectEnd": 0,
+      "fetchStart": 0.10000000009313226,
+      "domainLookupStart": 0.8999999999068677,
+      "domainLookupEnd": 1.2000000001862645,
+      "connectStart": 1.2000000001862645,
+      "secureConnectionStart": 0,
+      "connectEnd": 1.5,
+      "requestStart": 1.6000000000931323,
+      "responseStart": 77.10000000009313,
+      "firstInterimResponseStart": 0,
+      "finalResponseHeadersStart": 77.10000000009313,
+      "responseEnd": 80.79999999981374,
+      "transferSize": 6151,
+      "encodedBodySize": 5851,
+      "decodedBodySize": 29110,
+      "responseStatus": 200,
+      "serverTiming": [],
+      "unloadEventStart": 0,
+      "unloadEventEnd": 0,
+      "domInteractive": 126.70000000018626,
+      "domContentLoadedEventStart": 126.79999999981374,
+      "domContentLoadedEventEnd": 126.79999999981374,
+      "domComplete": 170,
+      "loadEventStart": 170,
+      "loadEventEnd": 170,
+      "type": "navigate",
+      "redirectCount": 0,
+      "activationStart": 0,
+      "criticalCHRestart": 0,
+      "notRestoredReasons": null,
+      "confidence": {
+        "randomizedTriggerRate": 0.4994798,
+        "value": "low"
+      }
+    },
+    "heap": 10000000,
+    "longTasks": []
+  },
+  "assets": [
+    {
+      "path": "/_next/static/chunks/webpack-2a4caac6e3aad29d.js",
+      "bytes": 3623,
+      "gzip": 1910
+    },
+    {
+      "path": "/_next/static/chunks/main-app-9968fe8f45807f53.js",
+      "bytes": 513,
+      "gzip": 222
+    },
+    {
+      "path": "/_next/static/chunks/885-010e1a0b6f4aa26a.js",
+      "bytes": 12730,
+      "gzip": 5010
+    },
+    {
+      "path": "/_next/static/chunks/287-97bea8bfe69bb3d3.js",
+      "bytes": 13545,
+      "gzip": 5113
+    },
+    {
+      "path": "/_next/static/chunks/400-0292f057bbb989da.js",
+      "bytes": 14080,
+      "gzip": 5382
+    },
+    {
+      "path": "/_next/static/chunks/app/error-bcfe67e438f57146.js",
+      "bytes": 618,
+      "gzip": 411
+    },
+    {
+      "path": "/_next/static/chunks/app/layout-ee224b38e0e63bb6.js",
+      "bytes": 15028,
+      "gzip": 5188
+    },
+    {
+      "path": "/_next/static/chunks/app/page-5acf2fdf36e08058.js",
+      "bytes": 8782,
+      "gzip": 3160
+    },
+    {
+      "path": "/_next/static/chunks/4bd1b696-c7408084347438ae.js",
+      "bytes": 203721,
+      "gzip": 64057
+    },
+    {
+      "path": "/_next/static/chunks/794-0ac5e2f0e81d2e0d.js",
+      "bytes": 242379,
+      "gzip": 67335
+    }
+  ],
+  "jsBytes": 515019,
+  "jsGzipBytes": 157788,
+  "seedTransactionMs": 231.570601,
+  "search": {
+    "p50": 193.6717149999995,
+    "p95": 222.13872700000002,
+    "max": 661.0938459999998,
+    "samples": [
+      661.0938459999998,
+      219.3627690000003,
+      189.28754200000003,
+      191.75843899999973,
+      196.03309499999978,
+      192.36392000000023,
+      192.39039000000002,
+      201.93951100000004,
+      222.13872700000002,
+      190.5184220000001,
+      198.23655499999995,
+      193.6717149999995,
+      214.0569689999993,
+      194.96242399999937,
+      208.96034700000018,
+      187.26653799999985,
+      186.82968600000004,
+      190.10772899999938,
+      199.99711200000002,
+      190.5588200000002
+    ],
+    "noNetwork": true
+  },
+  "graph": {
+    "count": "Showing 1,157 of 5,000 source conversations · 1,171 nodes · 3,484 links\nReset",
+    "layout": "Legend and graph boundaries\n\nFound by simple matching rules. Not verified. Agent suggestions use a dashed ring. No imported source is automatically verified.\n\nAI & Automation\nCore\nDevelopment\nGaming\nGeneral\nInfrastructure\nLearning\nPlanning\nSources\nUI / UX\n\nLayout: 322.1 ms in a worker · Reduced detail for dense views · List and Hierarchy expose node attributes without graphics.",
+    "frameGapMs": {
+      "p50": 16.699999999999818,
+      "p95": 16.799999999999727,
+      "max": 266.6
+    },
+    "idleRafMedianFps": 59.88023952095874,
+    "heap": 10000000,
+    "longTasks": [],
+    "canvases": 2
+  },
+  "cleanup": {
+    "heapBefore": 7736108,
+    "heapAfter": 8564708,
+    "delta": 828600,
+    "canvasesRemovedEachCycle": true
+  },
+  "unmeasured": [
+    "field INP/LCP/CLS p75",
+    "React render commit count",
+    "native hardware GPU memory/draw-call counters",
+    "VPS/Minecraft/PlexonPanel impact",
+    "iOS/Android performance"
+  ]
+}

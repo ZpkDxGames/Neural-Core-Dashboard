@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { PrivateConnectionSettings } from "./PrivateWorkspace";
 import { useBrain } from "./BrainProvider";
 import { OwnerIdentitySettings } from "@/components/OwnerIdentitySettings";
 import { SectionHeading, StatusBadge, TruthfulButton } from "./Primitives";
@@ -63,6 +64,7 @@ export function Settings({ tab = "owner" }: { tab?: string }) {
               <h2>Synchronization</h2>
               <StatusBadge status="sync.local-only" />
             </div>
+            <PrivateConnectionSettings />
             <p>{messages.remote}</p>
             {(
               [

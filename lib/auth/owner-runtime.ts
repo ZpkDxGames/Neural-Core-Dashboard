@@ -6,7 +6,7 @@ import type { AuthEvent, OwnerConfig, OidcProvider } from './owner-core.ts';
 
 // Offline protocol tests use the library's documented customFetch hook.
 // Production always uses normal HTTPS fetch and the fixed Google issuer.
-export function createGoogleProvider(config:OwnerConfig, customFetch?:oidc.CustomFetch):OidcProvider {
+export function createGoogleProvider(config:OwnerConfig, customFetch?:oidc.CustomFetch, fresh=false):OidcProvider {
   let pending:Promise<oidc.Configuration>|null=null;
   const client=()=>{
     if(!pending)pending=oidc.discovery(new URL('https://accounts.google.com'),config.clientId,
@@ -24,7 +24,7 @@ export function createGoogleProvider(config:OwnerConfig, customFetch?:oidc.Custo
       return oidc.buildAuthorizationUrl(cfg,{
         redirect_uri:redirectUri,response_type:'code',scope:'openid email',state,nonce,
         code_challenge:await oidc.calculatePKCECodeChallenge(verifier),
-        code_challenge_method:'S256',prompt:'select_account'
+        code_challenge_method:'S256',prompt:'select_account',...(fresh?{max_age:'0'}:{})
       }).toString();
     },
     async exchange({state,nonce,verifier,redirectUri,currentUrl}){
@@ -33,21 +33,25 @@ export function createGoogleProvider(config:OwnerConfig, customFetch?:oidc.Custo
         const current=new URL(currentUrl);
         if(current.origin+current.pathname!==redirectUri)throw Error('Callback mismatch');
         const tokens=await oidc.authorizationCodeGrant(cfg,new URL(currentUrl),{
-          pkceCodeVerifier:verifier,expectedState:state,expectedNonce:nonce,idTokenExpected:true
+          pkceCodeVerifier:verifier,expectedState:state,expectedNonce:nonce,idTokenExpected:true,...(fresh?{maxAge:120}:{})
         },{redirect_uri:redirectUri});
         const claims=tokens.claims();
         if(!claims || typeof claims.sub!=='string')throw Error('Missing subject');
-        return {sub:claims.sub,email_verified:claims.email_verified};
+        return {sub:claims.sub,email_verified:claims.email_verified,...(fresh?{auth_time:claims.auth_time}:{})};
       }catch{throw new AuthDependencyError('GOOGLE_EXCHANGE_REJECTED');}
     }
   };
 }
 
 let cached:{fingerprint:string;provider:OidcProvider;store:ReturnType<typeof createOwnerStore>}|null=null;
-export async function loadOwnerController(report?:(event:AuthEvent)=>void) {
+export function loadOwnerServices() {
   const config=readOwnerConfig(process.env);
   if(!config)return null;
   const fingerprint=createHash('sha256').update(JSON.stringify(config)).digest('hex');
   if(cached?.fingerprint!==fingerprint)cached={fingerprint,provider:createGoogleProvider(config),store:createOwnerStore(createAuthRedis(config))};
-  return ownerController({config,store:cached.store,provider:cached.provider,report});
+  return {config,store:cached.store,provider:cached.provider};
+}
+
+export async function loadOwnerController(report?:(event:AuthEvent)=>void){
+ const services=loadOwnerServices();return services?ownerController({...services,report}):null;
 }

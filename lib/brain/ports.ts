@@ -10,6 +10,7 @@ import type {
   Page,
   Proposal,
   SyncStatusView,
+  ReviewReceipt,
 } from "./types.ts";
 import { unavailable } from "./envelope.ts";
 
@@ -45,7 +46,7 @@ export interface VaultPort {
     id: string,
     decision: "verify" | "reject",
     note?: string,
-  ): Promise<DataEnvelope<{ id: string }>>;
+  ): Promise<DataEnvelope<ReviewReceipt>>;
 }
 
 export const MAX_PAGE = 50;

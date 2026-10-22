@@ -63,6 +63,19 @@ jobs:
           NCORE_V2_TEST_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_v2_test
           NCORE_V2_API_URL: postgresql://neuralcore_api:synthetic-ci-role@127.0.0.1:5432/ncore_v2_test
         run: node --test backend/v2/integration.test.mjs
+      - name: Private gateway, adapter, owner session and signed Google freshness contracts
+        run: npm run test:private
+      - name: Prepare isolated Phase 3 PostgreSQL database
+        run: psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase3_test OWNER postgres;"
+      - name: Native Phase 3 mTLS, authorization, provisioning and recovery journey
+        env:
+          NCORE_PHASE3_TEST_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_phase3_test
+          NCORE_PHASE3_API_URL: postgresql://neuralcore_api:synthetic-ci-role@127.0.0.1:5432/ncore_phase3_test
+          NCORE_PHASE3_ISSUER_URL: postgresql://neuralcore_issuer:synthetic-issuer-role@127.0.0.1:5432/ncore_phase3_test
+        run: |
+          mkdir -p docs/phase3/evidence
+          set -o pipefail
+          npm run test:private:integration | tee docs/phase3/evidence/native-integration.log
       - name: Synthetic PostgreSQL backup and isolated restore round trip (no AGE keys)
         run: |
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title,owner_id,content_hash) VALUES('chatgpt:synthetic-restore','chatgpt','Synthetic restore fixture','owner',repeat('a',64));"
@@ -102,6 +115,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Owner authentication, parity, XSS, protocol, responsive and accessibility browser tests (synthetic only)
         run: npm run test:auth-ui
+      - name: Opt-in private UI journeys (synthetic HTTP fixtures only)
+        run: npm run test:private:browser
       - name: Retain synthetic QA evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -110,10 +125,11 @@ jobs:
           path: |
             docs/ui/evidence/
             test-results/
+            docs/phase3/evidence/
           retention-days: 14
       - name: Ensure owner identity credentials are absent from browser bundles
         run: |
-          if grep -R -E 'NCORE_GOOGLE_CLIENT_SECRET|NCORE_AUTH_REDIS_TOKEN|NCORE_AUTH_CSRF_SECRET|NCORE_GOOGLE_OWNER_SUB' .next/static/; then
+          if grep -R -E 'NCORE_GOOGLE_CLIENT_SECRET|NCORE_AUTH_REDIS_TOKEN|NCORE_AUTH_CSRF_SECRET|NCORE_GOOGLE_OWNER_SUB|NCORE_PRIVATE_CLIENT_KEY_FILE|NCORE_PRIVATE_ASSERTION_KEY_FILE|BEGIN PRIVATE KEY|nbv2_' .next/static/; then
             echo 'FAIL: owner identity environment or allowlist referenced in client bundle' >&2
             exit 1
           fi

@@ -1,7 +1,7 @@
 import { randomUUID,createHmac,timingSafeEqual } from 'node:crypto';
 import { BrainError,fail,hash,uuid,validateNote,serializeNote,LIMITS } from './note.mjs';
 
-const mapPrincipal=row=>({principalId:row.principal_id,ownerId:row.owner_id,displayName:row.display_name,kind:row.kind,role:row.role,scopes:row.scopes,credentialHash:row.token_hash.trim()});
+const mapPrincipal=row=>({principalId:row.principal_id,ownerId:row.owner_id,displayName:row.display_name,kind:row.kind,role:row.role,scopes:row.scopes,credentialHash:row.token_hash.trim(),...(row.permission_epoch!==undefined?{permissionEpoch:row.permission_epoch}:{})});
 const types=p=>p.scopes.filter(s=>s.startsWith('type:')).map(s=>s.slice(5));
 const assertType=(p,type)=>{if(types(p).length&&!types(p).includes(type))fail('ROLE_FORBIDDEN',403);};
 export const summary=row=>({noteId:row.note_id,title:row.payload.title,type:row.payload.type,tags:row.payload.tags,revision:row.published_revision,
@@ -24,13 +24,15 @@ export class MemoryEngine {
   async authenticate(token){
     if(typeof token!=='string'||!/^nbv2_[A-Za-z0-9_-]{43}$/.test(token))fail('UNAUTHORIZED',401);
     const r=await this.pool.query('SELECT * FROM vault_principals WHERE token_hash=$1 AND disabled_at IS NULL',[hash(token)]);
-    if(r.rows.length!==1)fail('UNAUTHORIZED',401);return mapPrincipal(r.rows[0]);
+    if(r.rows.length!==1||r.rows[0].credential_expires_at&&new Date(r.rows[0].credential_expires_at)<=new Date()||r.rows[0]?.permission_epoch!==undefined&&r.rows[0].kind==='agent'&&!r.rows[0].credential_expires_at)fail('UNAUTHORIZED',401);return mapPrincipal(r.rows[0]);
   }
   async authorize(db,identity,scope){
     if(!identity||!uuid(identity.principalId)||typeof identity.credentialHash!=='string')fail('UNAUTHORIZED',401);
     const r=await db.query('SELECT * FROM vault_principals WHERE principal_id=$1 AND token_hash=$2 AND disabled_at IS NULL',[identity.principalId,identity.credentialHash]);
     if(r.rows.length!==1||r.rows[0].owner_id!==identity.ownerId)fail('UNAUTHORIZED',401);
-    const p=mapPrincipal(r.rows[0]);
+    const row=r.rows[0];
+    if(row.credential_expires_at&&new Date(row.credential_expires_at)<=new Date()||row.permission_epoch!==undefined&&row.kind==='agent'&&!row.credential_expires_at||identity.permissionEpoch!==undefined&&identity.permissionEpoch!==row.permission_epoch)fail('UNAUTHORIZED',401);
+    const p=mapPrincipal(row);
     if(!p.scopes.includes(scope)||(scope==='propose'&&p.role==='viewer')||(['review','delete','export'].includes(scope)&&p.role!=='owner'))fail('ROLE_FORBIDDEN',403);
     return p;
   }
@@ -80,6 +82,7 @@ export class MemoryEngine {
     });
   }
   async consumeProof(db,p,proof,subject,expected){
+    if(p.permissionEpoch!==undefined)fail('PRIVATE_ENGINE_REQUIRED',403);
     if(typeof proof!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(proof))fail('OWNER_PROOF_REQUIRED',403);
     const r=await db.query(`UPDATE vault_review_grants SET used_at=now() WHERE proof_hash=$1 AND owner_id=$2 AND principal_id=$3
       AND subject_id=$4 AND expected_revision=$5 AND used_at IS NULL AND expires_at>now() RETURNING proof_hash`,[hash(proof),p.ownerId,p.principalId,subject,expected]);
@@ -98,7 +101,7 @@ export class MemoryEngine {
       let n=(await db.query('SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2 FOR UPDATE',[p.ownerId,proposal.note_id])).rows[0];
       if(decision!=='reject'&&n&&(n.deleted_at||n.current_revision!==expectedRevision||(!proposal.expected_file_hash&&n.published_revision!==expectedRevision)))fail('REVISION_CONFLICT',409);
       if(!n&&expectedRevision!==0)fail('REVISION_CONFLICT',409);
-      await this.consumeProof(db,p,proof,proposalId,expectedRevision);
+      await this.consumeProof(db,p,proof,proposalId,expectedRevision,{action:decision,intentHash:proposal.payload_hash.trim()});
       if(decision==='reject'){
         await db.query("UPDATE vault_proposals SET state='rejected',reviewed_at=now() WHERE proposal_id=$1",[proposalId]);
         await this.audit(db,p,'review',proposalId,'rejected');return {proposalId,state:'rejected'};
@@ -194,7 +197,7 @@ export class MemoryEngine {
         const target=(await db.query('SELECT * FROM vault_notes WHERE owner_id=$1 AND note_id=$2 AND deleted_at IS NULL AND published_revision>0',[p.ownerId,consolidateInto])).rows[0];
         if(!target||target.note_id===noteId)fail('INVALID_CONSOLIDATION');
       }
-      await this.consumeProof(db,p,proof,(consolidateInto?'consolidate:':'delete:')+noteId,expectedRevision);
+      await this.consumeProof(db,p,proof,(consolidateInto?'consolidate:':'delete:')+noteId,expectedRevision,{action:consolidateInto?'consolidate':'delete',intentHash:hash(JSON.stringify({noteId,expectedRevision,consolidateInto}))});
       await db.query('UPDATE vault_notes SET deleted_at=now(),trust=\'rejected\',consolidated_into=$3 WHERE owner_id=$1 AND note_id=$2',[p.ownerId,noteId,consolidateInto]);
       await db.query('DELETE FROM vault_search_documents WHERE note_id=$1',[noteId]);
       await db.query("UPDATE vault_outbox SET state='cancelled' WHERE note_id=$1 AND state='pending' AND operation='publish'",[noteId]);
@@ -260,7 +263,7 @@ export class MemoryEngine {
       const scope=hash(JSON.stringify(['proposals-v1',p.ownerId,p.principalId,p.credentialHash,p.role,[...p.scopes].sort(),states,requestedTypes,limit]));
       const after=this.decodeCursor(cursor,scope);
       if(after&&(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(after.at)||!Number.isFinite(Date.parse(after.at))))fail('INVALID_CURSOR',400);
-      const result=await db.query(`SELECT proposal_id,note_id,principal_id,base_revision,payload,state,duplicate_of,created_at,
+      const result=await db.query(`SELECT proposal_id,note_id,principal_id,base_revision,payload,payload_hash,state,duplicate_of,created_at,
         to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
         FROM vault_proposals WHERE owner_id=$1 AND state=ANY($2::text[])
         AND (cardinality($3::text[])=0 OR payload->>'type'=ANY($3))
