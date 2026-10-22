@@ -4,7 +4,7 @@ No item below has been activated by this development phase. Record a concrete co
 
 ## 1. Source and isolation
 
-- [ ] Independently review migration 004, issuer/admin functions, BFF, gateway, adapter and source/test report. Reconfirm the exact heads and dependency chain #4 → #5 → #6 → #7 → #8 → Phase 3; do not merge implicitly.
+- [ ] Independently review migrations 004–005, encrypted delivery intent/activation/erasure, issuer/admin functions, BFF, gateway, adapter and source/test report. Reconfirm the exact heads and dependency chain #4 → #5 → #6 → #7 → #8 → Phase 3/3.1; do not merge implicitly.
 - [ ] Present a private staging origin/host/port list and a resource envelope. Use a fresh synthetic database, synthetic vault, synthetic owner/provider identities where possible, and a separate secret sink. No production data, shared Oracle migration or Minecraft load test.
 - [ ] Obtain explicit owner approval for the stated staging changes only, including any network/credential/Google registration changes. Approval for this source phase is insufficient.
 
@@ -18,7 +18,7 @@ No item below has been activated by this development phase. Record a concrete co
 
 ## 3. Database and roles
 
-- [ ] Take a separately approved synthetic pre-migration backup. Apply 001–004 only to the disposable staging database through the administrator's checksum-ledger workflow. Check rollback and all earlier migration hashes.
+- [ ] Take a separately approved synthetic pre-migration backup. Apply 001–005 only to the disposable staging database through the administrator's checksum-ledger workflow. Check rollback and all earlier migration hashes. The runtime must not read encrypted delivery material or change its metadata.
 - [ ] Use distinct API and issuer logins; issuer receives only reviewed membership. API must not insert principals/grants, mutate grant binding columns, change consent or invoke issuer/admin functions. Confirm UPDATE(used_at) only and immutable revisions.
 - [ ] Administrator maps the intended immutable Google subject's hash to the pinned owner principal. Do not trust a browser owner/role header or an email string as identity.
 - [ ] Supply an online primary session-family verifier using the existing auth namespace. Verify real logout/rotation/expiration/store outage with independent requests and no positive cache. Check concurrent revocation/decision linearization and epoch changes.
@@ -43,6 +43,8 @@ No item below has been activated by this development phase. Record a concrete co
 
 - [ ] Use one synthetic agent, one explicit type scope, allowed read/propose scopes and credential expiry ≤1 hour. Deny owner/review/delete/export/provision rights, viewer proposals and cross-type access.
 - [ ] Deliver the secret directly to the isolated server-side sink. Test sink timeout/failure, late delivery, lost database acknowledgment, same-key retry and changed-intent conflict. Receipts expose only metadata and a nonsecret handle.
+- [ ] Qualify durable sink idempotency by delivery ID and bigint generation fencing across sink restart and delayed old writes. A simple happy-path write callback does not qualify. Prove a delivered pending token cannot authenticate before activation commits, and test activation SQL/COMMIT failure plus lost acknowledgment.
+- [ ] Review server-only delivery-master custody, HKDF/AES-GCM metadata binding, retained pending-intent recovery and cancellation before key rotation. Keep key custody distinct from database backup access; plaintext must never enter diagnostics. Qualify five-attempt limits, bounded ten-row cleanup, quiet-service operator cleanup and encrypted backup/WAL retention. No real sink or key was provisioned in the source phase.
 - [ ] Test rotation, expiry, role downgrade and revocation against independent HTTP requests and cached identity objects. Revocation must work while the sink is unavailable. Outstanding proposals must remain unverified.
 - [ ] Interrupt review before/after SQL commit and worker publication; query the durable receipt before retry. Check two concurrent decisions, rollback, worker replay, file conflict and publication acknowledgment.
 - [ ] Preserve the 10,000-entry checkpoint gate. Separately obtain approval for a quiesced matching SQL+vault+manifest encrypted snapshot and isolated restore, including tombstone/no-resurrection validation and off-VPS key custody. SQL-only restore is insufficient.

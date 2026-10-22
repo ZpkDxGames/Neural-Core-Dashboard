@@ -1,5 +1,7 @@
 # Phase 3 architecture
 
+Phase 3.1 supersedes the synthetic credential delivery ordering below; see [delivery architecture](../phase31/ARCHITECTURE.md) and [security-readiness inspection](../phase31/SECURITY_READINESS.md). Explicit migration 005 is required for that development composition. No runtime activation is authorized.
+
 ## Boundaries
 
 The browser owns its existing IndexedDB archive. A new tab-only adapter calls only `/api/brain/v2/*` after an explicit owner action and confirmed remote-memory consent. It has no database URL, private bearer credential, service signing key or owner grant. Archive import/export/delete and the local graph retain their existing paths.
@@ -30,7 +32,7 @@ Receipt queries and idempotent completions may recover a committed decision afte
 
 Only viewer, contributor and maintainer roles are allowed; scopes are `read`, `propose` and explicit memory types. Viewer cannot propose. Review, delete, export, provision and owner authority are excluded. Initial policy permits one non-revoked synthetic agent per owner, credentials up to one hour and no real provider. Expired/revoked/rotated credentials and stale identity objects are denied at authentication and authorization. Permission changes automatically advance the epoch. Existing proposals remain unverified for owner review after revocation.
 
-Secrets are generated server-side and delivered only to an injected isolated secret sink under a bounded deadline. Public receipts contain a nonsecret handle and expiry. Sink failure or timeout rolls back principal/grant/receipt changes. A late sink write after rollback contains an invalid credential; retries replace the same handle. An uncertain database commit must be reconciled through its receipt before secret delivery is retried. Revocation succeeds independently of sink availability. A provision idempotency key cannot be reused for a different subject, intent or authorization context.
+Secrets are generated server-side and a bounded encrypted intent is committed before external delivery. No SQL transaction spans the injected sink call. Activation, proof consumption, receipt and ciphertext erasure commit together after delivery; a failed activation leaves the delivered token inactive and recoverable from its durable intent. Replays reuse the same delivery identity/token; sink writes fence the stable handle by generation. Public receipts contain only a nonsecret handle and expiry. Revocation succeeds independently of sink availability and cancels pending rotations. See Phase 3.1 for key custody, bounded attempts/cleanup, SQL role boundaries and sink qualification requirements.
 
 ## Bounds and recovery
 

@@ -50,19 +50,23 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase1b_invalid_test OWNER postgres;"
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_invalid_test -v ON_ERROR_STOP=1 -f db/001_init.sql
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_invalid_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title) VALUES('chatgpt:invalid-fixture','chatgpt','Synthetic invalid'); INSERT INTO memory_nodes(id,node_type,label) VALUES('synthetic-node','fact','Synthetic'); INSERT INTO memory_evidence(node_id,conversation_id,message_id) VALUES('synthetic-node','chatgpt:invalid-fixture','does-not-exist');"
-      - run: npm test
-      - run: node --test backend/*.test.mjs
+      - name: Retain complete Phase 3.1 unit and backend evidence
+        run: |
+          mkdir -p docs/phase31/evidence
+          set -o pipefail
+          npm test | tee docs/phase31/evidence/unit.log
+      - run: node --test backend/*.test.mjs | tee docs/phase31/evidence/backend.log
       - name: Vault V2 unit, filesystem, API and privacy contracts
-        run: node --test backend/v2/note.test.mjs backend/v2/vault.test.mjs backend/v2/api.test.mjs
+        run: node --test backend/v2/note.test.mjs backend/v2/vault.test.mjs backend/v2/api.test.mjs | tee docs/phase31/evidence/vault-unit.log
       - name: Prepare isolated V2 PostgreSQL database
         run: psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_v2_test OWNER postgres;"
       - name: Native PostgreSQL V2 migration, concurrency and recovery tests
         env:
           NCORE_V2_TEST_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/ncore_v2_test
           NCORE_V2_API_URL: postgresql://neuralcore_api:synthetic-ci-role@127.0.0.1:5432/ncore_v2_test
-        run: node --test backend/v2/integration.test.mjs
+        run: node --test backend/v2/integration.test.mjs | tee docs/phase31/evidence/vault-integration.log
       - name: Private gateway, adapter, owner session and signed Google freshness contracts
-        run: npm run test:private
+        run: npm run test:private | tee docs/phase31/evidence/private-contracts.log
       - name: Prepare isolated Phase 3 PostgreSQL database
         run: psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase3_test OWNER postgres;"
       - name: Native Phase 3 mTLS, authorization, provisioning and recovery journey
@@ -73,7 +77,7 @@ jobs:
         run: |
           mkdir -p docs/phase3/evidence
           set -o pipefail
-          npm run test:private:integration | tee docs/phase3/evidence/native-integration.log
+          npm run test:private:integration | tee docs/phase3/evidence/native-integration.log | tee docs/phase31/evidence/private-integration.log
       - name: Synthetic PostgreSQL backup and isolated restore round trip (no AGE keys)
         run: |
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title,owner_id,content_hash) VALUES('chatgpt:synthetic-restore','chatgpt','Synthetic restore fixture','owner',repeat('a',64));"
@@ -96,7 +100,7 @@ jobs:
           grep -F 'setpriv --reuid=postgres --regid=postgres --clear-groups' ops/backup/neural-core-backup.sh
       - name: Brain contracts, lifecycle, parity and design invariants
         run: |
-          npm run test:brain
+          npm run test:brain | tee docs/phase31/evidence/brain.log
           npm run lint
           node scripts/check-parity.mjs
       - name: Native V2 synthetic scale benchmark (disposable database)
@@ -116,7 +120,9 @@ jobs:
       - name: Opt-in private UI journeys (synthetic HTTP fixtures only)
         run: npm run test:private:browser
       - name: Locked dependency advisory audit (bounded network wait)
-        run: npm audit --audit-level=low --fetch-retries=0 --fetch-timeout=15000
+        run: |
+          npm audit --audit-level=low --fetch-retries=0 --fetch-timeout=15000 | tee docs/phase31/evidence/dependency-audit.log
+          npm audit --prefix backend --audit-level=low --fetch-retries=0 --fetch-timeout=15000 | tee docs/phase31/evidence/backend-dependency-audit.log
       - name: Retain synthetic QA evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -126,6 +132,7 @@ jobs:
             docs/ui/evidence/
             test-results/
             docs/phase3/evidence/
+            docs/phase31/evidence/
           retention-days: 14
       - name: Ensure owner identity credentials are absent from browser bundles
         run: |

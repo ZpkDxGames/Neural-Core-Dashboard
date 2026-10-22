@@ -6,10 +6,12 @@ import {
   randomBytes,
 } from "node:crypto";
 import { fail, hash, uuid } from "../note.mjs";
+import { strictJSON } from "./validation.mjs";
 export const ISSUER = "neural-brain-owner-bff-staging",
   AUDIENCE = "neural-brain-private-gateway-staging";
 const hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
 const integer = (x) => Number.isSafeInteger(x) && x >= 0;
+const record = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 /** The actual raw request target is required; URL normalization must not hide dot segments. */
 export function canonicalTarget(raw) {
   if (
@@ -131,13 +133,16 @@ export function verifyAssertion({
     fail("INVALID_ASSERTION", 401);
   let h, c;
   try {
-    h = JSON.parse(Buffer.from(parts[0], "base64url"));
-    c = JSON.parse(Buffer.from(parts[1], "base64url"));
+    const decoded = parts.map((x) => Buffer.from(x, "base64url"));
+    if (decoded.some((x, i) => x.toString("base64url") !== parts[i]))
+      fail("INVALID_ASSERTION", 401);
+    h = strictJSON(decoded[0]);
+    c = strictJSON(decoded[1]);
   } catch {
     fail("INVALID_ASSERTION", 401);
   }
   if (
-    !h ||
+    !record(h) ||
     h.alg !== "ES256" ||
     h.typ !== "JWT" ||
     typeof h.kid !== "string" ||
@@ -176,13 +181,14 @@ export function verifyAssertion({
     "cnf",
   ];
   if (
-    !c ||
+    !record(c) ||
     Object.keys(c).length !== fields.length ||
     Object.keys(c).some((x) => !fields.includes(x)) ||
     c.iss !== ISSUER ||
     c.aud !== AUDIENCE ||
     !uuid(c.sub) ||
     typeof c.owner !== "string" ||
+    c.owner.length < 1 ||
     c.owner.length > 120 ||
     !integer(c.iat) ||
     !integer(c.nbf) ||
@@ -205,9 +211,14 @@ export function verifyAssertion({
     !integer(c.session_expires_at) ||
     c.session_expires_at <= now ||
     !hex(thumbprint) ||
-    c.cnf?.["x5t#S256"] !==
+    !record(c.cnf) ||
+    Object.keys(c.cnf).length !== 1 ||
+    !Object.hasOwn(c.cnf, "x5t#S256") ||
+    typeof c.cnf["x5t#S256"] !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/.test(c.cnf["x5t#S256"]) ||
+    c.cnf["x5t#S256"] !==
       Buffer.from(thumbprint, "hex").toString("base64url") ||
-    Object.keys(c.cnf).length !== 1
+    !["GET", "POST", "DELETE"].includes(c.method)
   )
     fail("INVALID_ASSERTION", 401);
   return c;

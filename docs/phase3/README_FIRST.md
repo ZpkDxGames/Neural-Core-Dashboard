@@ -1,5 +1,7 @@
 # Neural Brain V2 — Phase 3 private integration candidate
 
+Phase 3.1 adds targeted reliability/security corrections and explicit migration 005. Start its next audit with [ARCHITECTURE](../phase31/ARCHITECTURE.md), [SECURITY_READINESS](../phase31/SECURITY_READINESS.md), [TEST_REPORT](../phase31/TEST_REPORT.md) and [SOURCE_REPORT](../phase31/SOURCE_REPORT.md). Earlier Phase 3 counts describe its historical 310-case baseline; current exact-head evidence is in the delivered certification.
+
 Development-only, synthetic qualification. No staging activation, merge or production approval.
 
 This candidate extends the exact reviewed PR #8 tree (`268038530cfc20dbeec4a6b1404d91e5dd4cddaf`), which includes PR #7 (`87a72ed4a309bf560f164c44757b0ff7937fd5ff`). It preserves their dependency chain and all earlier drafts. Start with ARCHITECTURE.md, API_CONTRACTS.md, SECURITY_FINDINGS.md, TEST_REPORT.md and STAGING_ACTIVATION_CHECKLIST.md in this directory.

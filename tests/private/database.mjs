@@ -3,6 +3,7 @@ import pg from "pg";
 import { applyMigration } from "../../backend/migrate.mjs";
 import { applyVaultMigration } from "../../backend/v2/migrate.mjs";
 import { applyPrivateMigration } from "../../backend/v2/private/migrate.mjs";
+import { applyDeliveryMigration } from "../../backend/v2/private/delivery-migrate.mjs";
 export async function privateDatabase() {
   let admin, pool, issuerPool, close, runtime;
   if (process.env.NCORE_V2_PGLITE_PACKAGE) {
@@ -118,6 +119,29 @@ export async function privateDatabase() {
   )
     throw Error("Migration 004 did not roll back");
   await applyPrivateMigration(admin);
+  let deliveryRolledBack = false;
+  try {
+    await applyDeliveryMigration({
+      query: (sql, args) => {
+        if (sql.startsWith("INSERT INTO schema_migrations"))
+          throw Error("SYNTHETIC_DELIVERY_LEDGER_FAILURE");
+        return admin.query(sql, args);
+      },
+    });
+  } catch (e) {
+    if (e.message !== "SYNTHETIC_DELIVERY_LEDGER_FAILURE") throw e;
+    deliveryRolledBack = true;
+  }
+  if (
+    !deliveryRolledBack ||
+    (
+      await admin.query(
+        "SELECT to_regclass('vault_agent_deliveries') AS present",
+      )
+    ).rows[0].present !== null
+  )
+    throw Error("Migration 005 did not roll back");
+  await applyDeliveryMigration(admin);
   if (!process.env.NCORE_V2_PGLITE_PACKAGE)
     await admin.query(
       "ALTER ROLE neuralcore_issuer LOGIN PASSWORD 'synthetic-issuer-role'",

@@ -1,6 +1,6 @@
 import test, { before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, randomUUID, randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomUUID, randomBytes, sign } from "node:crypto";
 import { request } from "node:https";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,6 +17,7 @@ import { createPrivateTransport } from "../../backend/v2/private/transport.mjs";
 import { signAssertion } from "../../backend/v2/private/assertions.mjs";
 import { hash } from "../../backend/v2/note.mjs";
 import { applyPrivateMigration } from "../../backend/v2/private/migrate.mjs";
+import { applyDeliveryMigration } from "../../backend/v2/private/delivery-migrate.mjs";
 import { FileVault } from "../../backend/v2/vault.mjs";
 import { VaultWorker } from "../../backend/v2/worker.mjs";
 let db,
@@ -1127,5 +1128,659 @@ test("fresh action-specific deletion, consolidation and interrupted-publication 
   await assert.rejects(
     () => engine.get(owner, target.noteId),
     (e) => e.code === "NOT_FOUND",
+  );
+});
+
+// Phase 3.1 additions. Every original test/assertion above is preserved.
+function fencedSink() {
+  const handles = new Map(),
+    deliveries = new Map(),
+    writes = [];
+  return {
+    handles,
+    deliveries,
+    writes,
+    async write(v) {
+      const prior = deliveries.get(v.deliveryId);
+      if (prior && prior !== hash(v.token))
+        throw Error("SYNTHETIC_DELIVERY_CONFLICT");
+      deliveries.set(v.deliveryId, hash(v.token));
+      const current = handles.get(v.handle);
+      if (!current || BigInt(current.generation) <= BigInt(v.generation))
+        handles.set(v.handle, { ...v });
+      writes.push({ ...v });
+    },
+  };
+}
+async function hardeningFixture() {
+  const principalId = randomUUID(),
+    ownerId = "synthetic-hardening-" + randomUUID(),
+    sessionRef = hash(randomUUID()),
+    identityHash = hash(randomUUID()),
+    sessionExpiresAt = Math.floor(Date.now() / 1000) + 3600,
+    sink = fencedSink();
+  await db.admin.query(
+    "INSERT INTO vault_principals(principal_id,owner_id,display_name,kind,role,scopes,token_hash) VALUES($1,$2,'SYNTH hardening owner','owner','owner',ARRAY['read','propose','review','delete','export'],$3)",
+    [principalId, ownerId, hash(randomUUID())],
+  );
+  await db.admin.query("INSERT INTO vault_owner_identities VALUES($1,$2)", [
+    identityHash,
+    principalId,
+  ]);
+  primarySessions.set(sessionRef, { expiresAt: sessionExpiresAt * 1000 });
+  const a = new PrivateAuthority({
+    engine,
+    issuerPool: db.issuerPool,
+    secretSink: sink,
+    verifyOnline: async ({ sessionRef }) =>
+      primarySessions.get(sessionRef) ?? null,
+  });
+  const claims = {
+    sub: principalId,
+    owner: ownerId,
+    identity_hash: identityHash,
+    session_ref: sessionRef,
+    session_expires_at: sessionExpiresAt,
+    principal_epoch: 0,
+    consent_epoch: 0,
+  };
+  const initial = await a.resolve(claims, { bootstrap: true });
+  await a.consent(initial, true);
+  const p = await a.resolve({
+    ...claims,
+    principal_epoch: 1,
+    consent_epoch: 2,
+  });
+  return { a, p, sink, subject: randomUUID() };
+}
+async function agentChallenge(f, action = "provision-agent", patch = {}) {
+  const epoch =
+    action === "provision-agent"
+      ? 0
+      : (
+          await db.admin.query(
+            "SELECT permission_epoch FROM vault_principals WHERE principal_id=$1",
+            [f.subject],
+          )
+        ).rows[0].permission_epoch;
+  const intent =
+    action === "provision-agent"
+      ? agentIntent({
+          displayName: "SYNTH hardening agent",
+          role: "contributor",
+          scopes: ["read", "propose", "type:reference"],
+          expiresInSeconds: 300,
+          idempotencyKey: randomUUID(),
+          ...patch,
+        })
+      : {
+          principalId: f.subject,
+          permissionEpoch: epoch,
+          ...(action === "rotate-agent" ? { expiresInSeconds: 120 } : {}),
+          ...patch,
+        };
+  const input = {
+    subjectId: f.subject,
+    expectedRevision: epoch,
+    decision: action,
+    intentSha256: hash(JSON.stringify(intent)),
+    permissionRequest: intent,
+  };
+  const c = await f.a.challenge(f.p, input);
+  await f.a.fresh(f.p, c.challengeId, {
+    identityHash: f.p.authorization.identityHash,
+    authTime: Math.floor(Date.now() / 1000),
+  });
+  return { ...c, input };
+}
+const deliveryRow = async (id) =>
+  (
+    await db.admin.query(
+      "SELECT * FROM vault_agent_deliveries WHERE delivery_id=$1",
+      [id],
+    )
+  ).rows[0];
+const principalRows = async (f) =>
+  (
+    await db.admin.query(
+      "SELECT * FROM vault_principals WHERE principal_id=$1",
+      [f.subject],
+    )
+  ).rows;
+function failTransaction(pool, stage, afterCommit = false, sqlFailure = false) {
+  let armed = true;
+  return {
+    async connect() {
+      const c = await pool.connect();
+      let matches = false;
+      return {
+        async query(sql, args) {
+          if (
+            (stage === "prepare" &&
+              sql.startsWith("INSERT INTO vault_agent_deliveries")) ||
+            (stage === "activate" &&
+              sql.startsWith("SELECT vault_apply_synthetic_agent"))
+          ) {
+            matches = true;
+            if (sqlFailure && armed) {
+              armed = false;
+              throw Error("SYNTHETIC_SQL_FAILURE");
+            }
+          }
+          if (sql === "COMMIT" && matches && armed) {
+            armed = false;
+            if (afterCommit) await c.query(sql, args);
+            throw Error(
+              afterCommit
+                ? "SYNTHETIC_LOST_COMMIT_ACK"
+                : "SYNTHETIC_COMMIT_FAILURE",
+            );
+          }
+          return c.query(sql, args);
+        },
+        release: (e) => c.release(e),
+      };
+    },
+  };
+}
+test("005 migration ledger rollback, checksum and new custody fields preserve least privilege", async () => {
+  assert.equal(
+    (await applyDeliveryMigration(db.admin)).state,
+    "already-applied",
+  );
+  const privileges = (
+    await db.admin.query(`SELECT
+    has_table_privilege('neuralcore_api','vault_agent_deliveries','SELECT') AS reads,
+    has_table_privilege('neuralcore_api','vault_agent_deliveries','INSERT') AS inserts,
+    has_column_privilege('neuralcore_issuer','vault_agent_deliveries','credential_hash','UPDATE') AS rewrites,
+    has_column_privilege('neuralcore_issuer','vault_agent_deliveries','sealed','UPDATE') AS erases,
+    has_table_privilege('neuralcore_issuer','vault_principals','UPDATE') AS elevates,
+    has_table_privilege('neuralcore_issuer','vault_review_grants','INSERT') AS mints`)
+  ).rows[0];
+  assert.deepEqual(privileges, {
+    reads: false,
+    inserts: false,
+    rewrites: false,
+    erases: true,
+    elevates: false,
+    mints: false,
+  });
+  await assert.rejects(
+    () => db.pool.query("SELECT sealed FROM vault_agent_deliveries"),
+    /permission denied/,
+  );
+  await db.admin.query(
+    "UPDATE schema_migrations SET sha256=repeat('0',64) WHERE version=5",
+  );
+  await assert.rejects(
+    () => applyDeliveryMigration(db.admin),
+    /checksum drift/,
+  );
+  await db.admin.query(
+    "UPDATE schema_migrations SET sha256=$1 WHERE version=5",
+    [
+      hash(
+        await readFile(
+          new URL("../../db/005_agent_delivery.sql", import.meta.url),
+          "utf8",
+        ),
+      ),
+    ],
+  );
+});
+test("delivery-intent COMMIT failure performs no sink write and creates no authority", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.issuerPool = failTransaction(db.issuerPool, "prepare");
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    /SYNTHETIC_COMMIT_FAILURE/,
+  );
+  assert.equal(f.sink.writes.length, 0);
+  assert.equal((await principalRows(f)).length, 0);
+  assert.equal(await deliveryRow(c.challengeId), undefined);
+  f.a.issuerPool = db.issuerPool;
+  assert.equal((await f.a.complete(f.p, c.challengeId)).state, "provisioned");
+});
+test("sink success followed by SQL COMMIT failure leaves only an inactive recoverable encrypted intent", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.issuerPool = failTransaction(db.issuerPool, "activate");
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    /SYNTHETIC_COMMIT_FAILURE/,
+  );
+  assert.equal(f.sink.writes.length, 1);
+  const token = f.sink.writes[0].token;
+  await assert.rejects(
+    () => engine.authenticate(token),
+    (e) => e.status === 401,
+  );
+  assert.equal((await principalRows(f)).length, 0);
+  const pending = await deliveryRow(c.challengeId);
+  assert.equal(pending.state, "pending");
+  assert.equal(pending.last_outcome, "ACTIVATION_UNCONFIRMED");
+  assert.ok(pending.sealed);
+  assert.equal(JSON.stringify(pending).includes(token), false);
+  const grant = (
+    await db.admin.query(
+      "SELECT receipt,consumed_at FROM vault_owner_challenges WHERE challenge_id=$1",
+      [c.challengeId],
+    )
+  ).rows[0];
+  assert.deepEqual(grant, { receipt: null, consumed_at: null });
+  // A new process instance reuses the same injected key, ciphertext, handle and token.
+  const restarted = new PrivateAuthority({
+    engine,
+    issuerPool: db.issuerPool,
+    secretSink: f.sink,
+    verifyOnline: f.a.verifyOnline,
+  });
+  assert.equal(
+    (await restarted.complete(f.p, c.challengeId)).state,
+    "provisioned",
+  );
+  assert.equal(f.sink.writes[1].token, token);
+  assert.equal(f.sink.deliveries.size, 1);
+  assert.equal((await principalRows(f)).length, 1);
+  assert.equal((await engine.authenticate(token)).principalId, f.subject);
+  assert.equal((await deliveryRow(c.challengeId)).sealed, null);
+});
+test("SQL activation statement failure after sink success rolls back grant and never authorizes the delivered token", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.issuerPool = failTransaction(db.issuerPool, "activate", false, true);
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    /SYNTHETIC_SQL_FAILURE/,
+  );
+  await assert.rejects(
+    () => engine.authenticate(f.sink.writes[0].token),
+    (e) => e.status === 401,
+  );
+  assert.equal((await principalRows(f)).length, 0);
+  f.a.issuerPool = db.issuerPool;
+  assert.equal((await f.a.complete(f.p, c.challengeId)).state, "provisioned");
+});
+test("lost intent commit acknowledgment retries one delivery record without duplicate authority", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.issuerPool = failTransaction(db.issuerPool, "prepare", true);
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    /SYNTHETIC_LOST_COMMIT_ACK/,
+  );
+  assert.equal(f.sink.writes.length, 0);
+  assert.ok((await deliveryRow(c.challengeId)).sealed);
+  f.a.issuerPool = db.issuerPool;
+  assert.equal((await f.a.complete(f.p, c.challengeId)).state, "provisioned");
+  assert.equal(f.sink.deliveries.size, 1);
+  assert.equal((await principalRows(f)).length, 1);
+});
+test("lost activation commit acknowledgment recovers its receipt without redelivery or duplicate grants", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.issuerPool = failTransaction(db.issuerPool, "activate", true);
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    /SYNTHETIC_LOST_COMMIT_ACK/,
+  );
+  f.a.issuerPool = db.issuerPool;
+  assert.equal((await f.a.complete(f.p, c.challengeId)).replayed, true);
+  assert.equal(f.sink.writes.length, 1);
+  assert.equal((await principalRows(f)).length, 1);
+  assert.equal((await deliveryRow(c.challengeId)).sealed, null);
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT count(*)::int AS n FROM vault_review_grants WHERE subject_id=$1 AND used_at IS NOT NULL",
+        [f.subject],
+      )
+    ).rows[0].n,
+    1,
+  );
+});
+test("lost sink acknowledgment replays identical secret and delivery identity before activation", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f),
+    sink = f.sink;
+  f.a.secretSink = {
+    async write(v) {
+      await sink.write(v);
+      throw Error("SYNTHETIC_LOST_SINK_ACK " + v.token);
+    },
+  };
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    (e) =>
+      e.code === "SECRET_DELIVERY_UNAVAILABLE" && !e.message.includes("nbv2_"),
+  );
+  await assert.rejects(
+    () => engine.authenticate(sink.writes[0].token),
+    (e) => e.status === 401,
+  );
+  f.a.secretSink = sink;
+  await f.a.complete(f.p, c.challengeId);
+  assert.equal(sink.writes[0].token, sink.writes[1].token);
+  assert.equal(sink.writes[0].deliveryId, sink.writes[1].deliveryId);
+  assert.equal((await deliveryRow(c.challengeId)).attempts, 2);
+});
+test("delivery timeout, retry and a late old write remain idempotent and generation fenced across rotation", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f),
+    sink = f.sink;
+  let late, captured;
+  f.a.secretSink = {
+    write(v) {
+      captured = v;
+      return new Promise((r) => {
+        late = async () => {
+          await sink.write(v);
+          r();
+        };
+      });
+    },
+  };
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    (e) => e.code === "SECRET_DELIVERY_UNAVAILABLE",
+  );
+  assert.equal(captured.signal.aborted, true);
+  await assert.rejects(
+    () => engine.authenticate(captured.token),
+    (e) => e.status === 401,
+  );
+  f.a.secretSink = sink;
+  const first = await f.a.complete(f.p, c.challengeId),
+    rotate = await agentChallenge(f, "rotate-agent");
+  await f.a.complete(f.p, rotate.challengeId);
+  const current = sink.handles.get(first.credentialHandle).token;
+  await late();
+  assert.equal(sink.handles.get(first.credentialHandle).token, current);
+  assert.equal((await engine.authenticate(current)).principalId, f.subject);
+  await assert.rejects(
+    () => engine.authenticate(captured.token),
+    (e) => e.status === 401,
+  );
+});
+test("concurrent duplicate provisioning and request-key replay create exactly one authority and receipt", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  assert.equal((await f.a.challenge(f.p, c.input)).challengeId, c.challengeId);
+  const results = await Promise.all([
+    f.a.complete(f.p, c.challengeId),
+    f.a.complete(f.p, c.challengeId),
+  ]);
+  assert.equal(results.filter((x) => !x.replayed).length, 1);
+  assert.equal(results[0].principalId, results[1].principalId);
+  assert.equal((await principalRows(f)).length, 1);
+  assert.equal(f.sink.deliveries.size, 1);
+  await assert.rejects(
+    () => f.a.challenge(f.p, { ...c.input, subjectId: randomUUID() }),
+    (e) => e.code === "IDEMPOTENCY_CONFLICT",
+  );
+});
+test("failed rotation preserves the old committed credential; retry activates one new credential and erases ciphertext", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  const initial = await f.a.complete(f.p, c.challengeId),
+    old = f.sink.handles.get(initial.credentialHandle).token;
+  const rotate = await agentChallenge(f, "rotate-agent");
+  f.a.issuerPool = failTransaction(db.issuerPool, "activate");
+  await assert.rejects(
+    () => f.a.complete(f.p, rotate.challengeId),
+    /SYNTHETIC_COMMIT_FAILURE/,
+  );
+  const pending = f.sink.handles.get(initial.credentialHandle).token;
+  assert.equal((await engine.authenticate(old)).principalId, f.subject);
+  await assert.rejects(
+    () => engine.authenticate(pending),
+    (e) => e.status === 401,
+  );
+  f.a.issuerPool = db.issuerPool;
+  await f.a.complete(f.p, rotate.challengeId);
+  await assert.rejects(
+    () => engine.authenticate(old),
+    (e) => e.status === 401,
+  );
+  assert.equal((await engine.authenticate(pending)).principalId, f.subject);
+  assert.equal((await deliveryRow(rotate.challengeId)).sealed, null);
+});
+test("revocation cancels pending rotation during sink outage and cannot be undone by a late write", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  const initial = await f.a.complete(f.p, c.challengeId),
+    old = f.sink.handles.get(initial.credentialHandle).token;
+  const rotate = await agentChallenge(f, "rotate-agent");
+  let candidate;
+  f.a.secretSink = {
+    async write(v) {
+      candidate = v;
+      throw Error("SYNTHETIC_SINK_DOWN");
+    },
+  };
+  await assert.rejects(() => f.a.complete(f.p, rotate.challengeId));
+  const revoke = await agentChallenge(f, "revoke-agent");
+  assert.equal((await f.a.complete(f.p, revoke.challengeId)).state, "revoked");
+  assert.equal((await deliveryRow(rotate.challengeId)).state, "cancelled");
+  assert.equal((await deliveryRow(rotate.challengeId)).sealed, null);
+  await f.sink.write(candidate);
+  for (const token of [old, candidate.token])
+    await assert.rejects(
+      () => engine.authenticate(token),
+      (e) => e.status === 401,
+    );
+  await assert.rejects(() => f.a.complete(f.p, rotate.challengeId));
+});
+test("expired or consent-revoked pending deliveries are boundedly cancelled and ciphertext is erased", async () => {
+  for (const reason of ["expiry", "consent"]) {
+    const f = await hardeningFixture(),
+      c = await agentChallenge(f);
+    f.a.secretSink = {
+      async write() {
+        throw Error("SYNTHETIC_SINK_DOWN");
+      },
+    };
+    await assert.rejects(() => f.a.complete(f.p, c.challengeId));
+    if (reason === "expiry")
+      await db.admin.query(
+        "UPDATE vault_owner_challenges SET expires_at=now()-interval '1 second' WHERE challenge_id=$1",
+        [c.challengeId],
+      );
+    else await f.a.consent(f.p, false);
+    const cleaned = await f.a.cleanupDeliveries();
+    assert.ok(cleaned.rows.length <= 10);
+    assert.equal((await deliveryRow(c.challengeId)).state, "cancelled");
+    assert.equal((await deliveryRow(c.challengeId)).sealed, null);
+    assert.equal((await principalRows(f)).length, 0);
+  }
+});
+test("crash between intent commit and delivery recovers deterministically; missing key and exhausted attempts fail closed", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  await f.a.prepareAgentDelivery(f.p, c.challengeId); // Intent committed, process exits before calling sink.
+  const restarted = new PrivateAuthority({
+    engine,
+    issuerPool: db.issuerPool,
+    secretSink: f.sink,
+    verifyOnline: f.a.verifyOnline,
+  });
+  assert.equal(
+    (await restarted.complete(f.p, c.challengeId)).state,
+    "provisioned",
+  );
+  const g = await hardeningFixture(),
+    d = await agentChallenge(g);
+  await g.a.prepareAgentDelivery(g.p, d.challengeId);
+  const wrongKey = new PrivateAuthority({
+    engine,
+    issuerPool: db.issuerPool,
+    secretSink: g.sink,
+    verifyOnline: g.a.verifyOnline,
+    deliveryKey: "changed-synthetic-delivery-key-123456",
+  });
+  await assert.rejects(
+    () => wrongKey.complete(g.p, d.challengeId),
+    (e) => e.code === "DELIVERY_KEY_UNAVAILABLE",
+  );
+  assert.equal(g.sink.writes.length, 0);
+  assert.equal((await principalRows(g)).length, 0);
+  assert.equal(
+    (await deliveryRow(d.challengeId)).last_outcome,
+    "KEY_UNAVAILABLE",
+  );
+  await db.admin.query(
+    "UPDATE vault_agent_deliveries SET attempts=5 WHERE delivery_id=$1",
+    [d.challengeId],
+  );
+  await assert.rejects(
+    () => g.a.complete(g.p, d.challengeId),
+    (e) => e.code === "DELIVERY_RETRY_LIMIT",
+  );
+  assert.equal(g.sink.writes.length, 0);
+});
+test("actual mTLS gateway maps malformed signed confirmation/JSON claims to 401 while SQL outage remains 503", async () => {
+  const path = "/v2/private/session",
+    token = signAssertion({
+      key: signing.privateKey,
+      kid: "synthetic",
+      context: bootstrap,
+      method: "GET",
+      target: path,
+      thumbprint: certs.client.thumbprint,
+    });
+  const original = JSON.parse(Buffer.from(token.split(".")[1], "base64url"));
+  const signed = (payload) => {
+    const input =
+      token.split(".")[0] +
+      "." +
+      Buffer.from(
+        typeof payload === "string" ? payload : JSON.stringify(payload),
+      ).toString("base64url");
+    return (
+      input +
+      "." +
+      sign("sha256", Buffer.from(input), {
+        key: signing.privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url")
+    );
+  };
+  const raw = (jwt) =>
+    new Promise((resolve, reject) => {
+      const req = request(
+        "https://127.0.0.1:" + server.address().port + path,
+        {
+          ...certs.client,
+          minVersion: "TLSv1.3",
+          maxVersion: "TLSv1.3",
+          headers: { authorization: "Bearer " + jwt },
+        },
+        (res) => {
+          const bytes = [];
+          res.on("data", (b) => bytes.push(b));
+          res.on("end", () =>
+            resolve({
+              status: res.statusCode,
+              body: JSON.parse(Buffer.concat(bytes)),
+            }),
+          );
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  for (const cnf of [
+    undefined,
+    null,
+    false,
+    1,
+    "pin",
+    [],
+    {},
+    { "x5t#S256": null },
+    { "x5t#S256": [] },
+    { "x5t#S256": original.cnf["x5t#S256"], extra: true },
+  ]) {
+    const c = { ...original, cnf };
+    if (cnf === undefined) delete c.cnf;
+    const rejected = await raw(signed(c));
+    assert.equal(rejected.status, 401);
+    assert.deepEqual(rejected.body, { error: "INVALID_ASSERTION" });
+  }
+  for (const payload of [
+    "null",
+    "[]",
+    JSON.stringify(original).replace('"cnf":{', '"cnf":null,"cnf":{'),
+  ])
+    assert.equal((await raw(signed(payload))).status, 401);
+  const previous = engine.tx;
+  engine.tx = async () => {
+    throw Error("SYNTHETIC_SQL_OUTAGE");
+  };
+  try {
+    assert.equal((await raw(token)).status, 503);
+  } finally {
+    engine.tx = previous;
+  }
+});
+test("primary session revocation after sink success prevents credential activation", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.secretSink = {
+    async write(v) {
+      await f.sink.write(v);
+      primarySessions.delete(f.p.authorization.sessionRef);
+    },
+  };
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    (e) => e.code === "NO_OWNER_SESSION",
+  );
+  assert.equal((await principalRows(f)).length, 0);
+  await assert.rejects(
+    () => engine.authenticate(f.sink.writes[0].token),
+    (e) => e.status === 401,
+  );
+});
+test("SQL issuer cannot expand a fresh rotation grant beyond its reviewed lifetime", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  const initial = await f.a.complete(f.p, c.challengeId),
+    old = f.sink.handles.get(initial.credentialHandle).token;
+  const rotate = await agentChallenge(f, "rotate-agent"),
+    proof = randomBytes(32).toString("base64url");
+  await db.issuerPool.query("SELECT vault_issue_bound_grant($1,$2)", [
+    rotate.challengeId,
+    hash(proof),
+  ]);
+  await assert.rejects(
+    () =>
+      db.issuerPool.query(
+        "SELECT vault_apply_synthetic_agent($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        [
+          "rotate-agent",
+          f.p.ownerId,
+          f.subject,
+          "",
+          "viewer",
+          [],
+          hash("nbv2_" + randomBytes(32).toString("base64url")),
+          new Date(Date.now() + 600000),
+          hash(proof),
+          f.p.authorization.sessionRef,
+        ],
+      ),
+    /STALE_INTENT/,
+  );
+  assert.equal((await engine.authenticate(old)).principalId, f.subject);
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT used_at FROM vault_review_grants WHERE proof_hash=$1",
+        [hash(proof)],
+      )
+    ).rows[0].used_at,
+    null,
   );
 });

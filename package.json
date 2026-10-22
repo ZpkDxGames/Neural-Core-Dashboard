@@ -14,14 +14,14 @@
     "lint": "node scripts/lint-brain-tokens.mjs",
     "test:vault": "node --test backend/v2/note.test.mjs backend/v2/vault.test.mjs backend/v2/api.test.mjs",
     "test:vault:integration": "node --test backend/v2/integration.test.mjs",
-    "test:private": "node --experimental-strip-types --test tests/private/deadline.test.mjs tests/private/assertions.test.mjs tests/private/adapter.test.mjs tests/private/bff.test.mjs tests/private/oidc.test.mjs tests/private/owner-access.test.mjs",
+    "test:private": "node --experimental-strip-types --test tests/private/deadline.test.mjs tests/private/assertions.test.mjs tests/private/adapter.test.mjs tests/private/bff.test.mjs tests/private/oidc.test.mjs tests/private/owner-access.test.mjs tests/private/malformed-assertions.test.mjs tests/private/delivery.test.mjs",
     "test:private:integration": "node --experimental-strip-types --test tests/private/integration.test.mjs",
     "test:private:browser": "playwright test --config playwright.private.config.mjs"
   },
   "dependencies": {
     "@upstash/redis": "1.39.0",
     "lucide-react": "^0.468.0",
-    "next": "^16.1.0",
+    "next": "16.4.2",
     "openid-client": "6.8.8",
     "pg": "^8.16.0",
     "react": "^19.2.0",

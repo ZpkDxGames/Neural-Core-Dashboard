@@ -3,6 +3,7 @@ import { VaultWorker } from "../worker.mjs";
 import { PrivateMemoryEngine } from "./engine.mjs";
 import { fail, hash, uuid } from "../note.mjs";
 import { fields } from "./validation.mjs";
+import { deliveryCipher } from "./delivery.mjs";
 import {
   guardedDatabase,
   checkDeadline,
@@ -58,6 +59,7 @@ export class PrivateAuthority {
     issuerPool,
     verifyOnline,
     secretSink,
+    deliveryKey = engine.cursorKey,
     worker = null,
     clock = () => Date.now(),
   }) {
@@ -67,11 +69,13 @@ export class PrivateAuthority {
     this.issuerPool = issuerPool;
     this.verifyOnline = verifyOnline;
     this.secretSink = secretSink;
+    this.deliveryCipher = deliveryCipher(deliveryKey);
     this.worker = worker;
     this.clock = clock;
   }
   async tx(fn) {
     const c = await this.issuerPool.connect();
+    let broken;
     try {
       await c.query("BEGIN");
       await c.query("SET LOCAL statement_timeout='5000ms'");
@@ -81,10 +85,11 @@ export class PrivateAuthority {
       await c.query("COMMIT");
       return result;
     } catch (e) {
+      broken = e;
       await c.query("ROLLBACK").catch(() => {});
       throw e;
     } finally {
-      c.release();
+      c.release(broken);
     }
   }
   async online(claims) {
@@ -574,7 +579,168 @@ export class PrivateAuthority {
       };
     });
   }
+  /** Bounded, explicit maintenance; no timer, listener, schedule or live composition. */
+  async cleanupDeliveries() {
+    return this.tx((db) =>
+      db.query(`UPDATE vault_agent_deliveries SET state='cancelled',sealed=NULL,last_outcome='CANCELLED'
+      WHERE delivery_id IN (
+        SELECT d.delivery_id FROM vault_agent_deliveries d
+        JOIN vault_owner_challenges c ON c.challenge_id=d.delivery_id
+        JOIN vault_private_sessions s ON s.session_ref_hash=c.session_ref_hash
+        JOIN vault_principals o ON o.principal_id=c.principal_id
+        LEFT JOIN vault_principals a ON a.principal_id=d.subject_id
+        WHERE d.state='pending' AND (d.expires_at<=clock_timestamp() OR c.expires_at<=clock_timestamp()
+          OR c.consumed_at IS NOT NULL OR s.revoked_at IS NOT NULL OR NOT s.consented
+          OR s.expires_at<=clock_timestamp() OR s.consent_epoch<>c.consent_epoch
+          OR o.disabled_at IS NOT NULL OR o.permission_epoch<>c.principal_epoch
+          OR (c.action='rotate-agent' AND (a.principal_id IS NULL OR a.disabled_at IS NOT NULL OR a.permission_epoch<>c.expected_revision)))
+        ORDER BY d.expires_at LIMIT 10 FOR UPDATE OF d SKIP LOCKED
+      ) RETURNING delivery_id`),
+    );
+  }
+  async deliveryOutcome(id, outcome) {
+    await this.tx((db) =>
+      db.query(
+        "UPDATE vault_agent_deliveries SET last_outcome=$2 WHERE delivery_id=$1 AND state='pending'",
+        [id, outcome],
+      ),
+    ).catch(() => {}); // The caller still returns a fixed unavailable error if diagnostics cannot commit.
+  }
+  async prepareAgentDelivery(p, id) {
+    return this.tx(async (db) => {
+      const c = await this.lockedChallenge(db, p, id);
+      if (c.receipt || !["provision-agent", "rotate-agent"].includes(c.action))
+        return null;
+      if (
+        !c.fresh_at ||
+        new Date(c.fresh_at).getTime() < this.clock() - 120000 ||
+        new Date(c.fresh_at).getTime() > this.clock() + 5000
+      )
+        fail("FRESH_OWNER_REQUIRED", 403);
+      if (!this.secretSink || typeof this.secretSink.write !== "function")
+        fail("SECRET_SINK_UNAVAILABLE", 503);
+      if (c.action === "rotate-agent") {
+        await db.query("SELECT vault_lock_authorization($1,NULL)", [
+          c.subject_id,
+        ]);
+        const current = (
+          await db.query(
+            "SELECT permission_epoch,disabled_at,synthetic,kind,owner_id FROM vault_principals WHERE principal_id=$1",
+            [c.subject_id],
+          )
+        ).rows[0];
+        if (
+          !current ||
+          current.disabled_at ||
+          !current.synthetic ||
+          current.kind !== "agent" ||
+          current.owner_id !== p.ownerId ||
+          current.permission_epoch !== c.expected_revision
+        )
+          fail("STALE_INTENT", 409);
+      }
+      await db.query("SELECT pg_advisory_xact_lock(hashtext($1),107)", [
+        c.subject_id,
+      ]);
+      let job = (
+        await db.query(
+          "SELECT * FROM vault_agent_deliveries WHERE delivery_id=$1 FOR UPDATE",
+          [id],
+        )
+      ).rows[0];
+      if (!job) {
+        const pending = await db.query(
+          "SELECT 1 FROM vault_agent_deliveries WHERE subject_id=$1 AND state='pending'",
+          [c.subject_id],
+        );
+        if (pending.rows.length) fail("DELIVERY_CONFLICT", 409);
+        const token = "nbv2_" + secret();
+        const draft = {
+          delivery_id: id,
+          subject_id: c.subject_id,
+          owner_id: p.ownerId,
+          credential_hash: hash(token),
+          expires_at: new Date(this.clock() + c.intent.expiresInSeconds * 1000),
+        };
+        job = (
+          await db.query(
+            `INSERT INTO vault_agent_deliveries(delivery_id,subject_id,owner_id,credential_hash,expires_at,sealed)
+          VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [
+              id,
+              c.subject_id,
+              p.ownerId,
+              draft.credential_hash,
+              draft.expires_at,
+              JSON.stringify(this.deliveryCipher.seal(token, draft)),
+            ],
+          )
+        ).rows[0];
+      }
+      if (
+        job.state !== "pending" ||
+        job.owner_id !== p.ownerId ||
+        job.subject_id !== c.subject_id ||
+        new Date(job.expires_at).getTime() <= this.clock()
+      )
+        fail("DELIVERY_UNAVAILABLE", 503);
+      if (job.attempts >= 5) fail("DELIVERY_RETRY_LIMIT", 503);
+      await db.query(
+        "UPDATE vault_agent_deliveries SET attempts=attempts+1 WHERE delivery_id=$1",
+        [id],
+      );
+      return job;
+    });
+  }
   async complete(p, id) {
+    // A durable encrypted intent must be committed before any external side effect.
+    // Pending tokens do not match an active principal. Retries decrypt the SAME token.
+    await this.cleanupDeliveries();
+    const job = await this.prepareAgentDelivery(p, id);
+    if (job) {
+      let token;
+      try {
+        token = this.deliveryCipher.open(job);
+      } catch {
+        await this.deliveryOutcome(id, "KEY_UNAVAILABLE");
+        fail("DELIVERY_KEY_UNAVAILABLE", 503);
+      }
+      await this.online({
+        session_ref: binding(p).sessionRef,
+        identity_hash: binding(p).identityHash,
+        session_expires_at: p.sessionExpiresAt,
+      });
+      try {
+        // No SQL transaction is held across the sink call. The sink must durably
+        // upsert by deliveryId, and fence the stable handle by generation.
+        await boundedDependency((signal) =>
+          this.secretSink.write({
+            handle: "synthetic-agent:" + job.subject_id,
+            deliveryId: job.delivery_id,
+            generation: String(job.generation),
+            token,
+            expiresAt: new Date(job.expires_at).toISOString(),
+            signal,
+          }),
+        );
+      } catch {
+        await this.deliveryOutcome(id, "SINK_UNAVAILABLE");
+        fail("SECRET_DELIVERY_UNAVAILABLE", 503);
+      }
+      await this.online({
+        session_ref: binding(p).sessionRef,
+        identity_hash: binding(p).identityHash,
+        session_expires_at: p.sessionExpiresAt,
+      });
+    }
+    try {
+      return await this.finishCompletion(p, id, job);
+    } catch (e) {
+      if (job) await this.deliveryOutcome(id, "ACTIVATION_UNCONFIRMED");
+      throw e;
+    }
+  }
+  async finishCompletion(p, id, prepared) {
     return this.tx(async (db) => {
       const c = await this.lockedChallenge(db, p, id);
       if (c.receipt) return { ...c.receipt, replayed: true };
@@ -617,11 +783,29 @@ export class PrivateAuthority {
           (!this.secretSink || typeof this.secretSink.write !== "function")
         )
           fail("SECRET_SINK_UNAVAILABLE", 503);
-        const token = "nbv2_" + secret(),
-          handle = "synthetic-agent:" + c.subject_id,
-          expiry = new Date(
-            this.clock() + (c.intent.expiresInSeconds ?? 60) * 1000,
-          );
+        const job =
+          c.action === "revoke-agent"
+            ? null
+            : (
+                await db.query(
+                  "SELECT * FROM vault_agent_deliveries WHERE delivery_id=$1 FOR UPDATE",
+                  [id],
+                )
+              ).rows[0];
+        if (
+          c.action !== "revoke-agent" &&
+          (!prepared ||
+            !job ||
+            job.state !== "pending" ||
+            job.credential_hash !== prepared.credential_hash ||
+            job.subject_id !== c.subject_id ||
+            job.owner_id !== p.ownerId)
+        )
+          fail("DELIVERY_UNAVAILABLE", 503);
+        const handle = "synthetic-agent:" + c.subject_id,
+          expiry = job
+            ? new Date(job.expires_at)
+            : new Date(this.clock() + 60000);
         await db.query(
           "SELECT vault_apply_synthetic_agent($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
           [
@@ -631,21 +815,22 @@ export class PrivateAuthority {
             c.intent.displayName ?? "",
             c.intent.role ?? "viewer",
             c.intent.scopes ?? [],
-            hash(token),
+            job?.credential_hash.trim() ?? hash(secret()),
             expiry,
             hash(proof),
             binding(p).sessionRef,
           ],
         );
-        // Secret custody is server-to-server only. Failed delivery rolls back DB+proof+receipt.
-        if (c.action !== "revoke-agent")
-          await boundedDependency((signal) =>
-            this.secretSink.write({
-              handle,
-              token,
-              expiresAt: expiry.toISOString(),
-              signal,
-            }),
+        // Credential activation, ciphertext erasure and owner receipt commit together.
+        if (job)
+          await db.query(
+            "UPDATE vault_agent_deliveries SET state='delivered',sealed=NULL,last_outcome='DELIVERED' WHERE delivery_id=$1",
+            [id],
+          );
+        else
+          await db.query(
+            "UPDATE vault_agent_deliveries SET state='cancelled',sealed=NULL,last_outcome='CANCELLED' WHERE subject_id=$1 AND state='pending'",
+            [c.subject_id],
           );
         receipt = {
           principalId: c.subject_id,
