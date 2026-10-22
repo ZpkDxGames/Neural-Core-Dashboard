@@ -1874,3 +1874,46 @@ test("concurrent restricted SQL rotations recheck the approved epoch after the p
     (e) => e.status === 401,
   );
 });
+
+test("PostgreSQL deferred constraint rejects COMMIT after sink success without activating the credential", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  await db.admin
+    .query(`CREATE FUNCTION phase31_deferred_agent_failure() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+    BEGIN IF NEW.principal_id::text=TG_ARGV[0] THEN RAISE EXCEPTION 'SYNTHETIC_DATABASE_COMMIT_FAILURE'; END IF; RETURN NULL; END $$`);
+  // Fixture UUID is generated locally; there is no user-provided SQL identifier/value.
+  await db.admin
+    .query(`CREATE CONSTRAINT TRIGGER phase31_deferred_agent_failure AFTER INSERT ON vault_principals
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION phase31_deferred_agent_failure('${f.subject}')`);
+  try {
+    await assert.rejects(
+      () => f.a.complete(f.p, c.challengeId),
+      /SYNTHETIC_DATABASE_COMMIT_FAILURE/,
+    );
+  } finally {
+    await db.admin.query(
+      "DROP TRIGGER phase31_deferred_agent_failure ON vault_principals",
+    );
+    await db.admin.query("DROP FUNCTION phase31_deferred_agent_failure()");
+  }
+  assert.equal(f.sink.writes.length, 1);
+  const token = f.sink.writes[0].token;
+  await assert.rejects(
+    () => engine.authenticate(token),
+    (e) => e.status === 401,
+  );
+  assert.equal((await principalRows(f)).length, 0);
+  assert.equal((await deliveryRow(c.challengeId)).state, "pending");
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT receipt FROM vault_owner_challenges WHERE challenge_id=$1",
+        [c.challengeId],
+      )
+    ).rows[0].receipt,
+    null,
+  );
+  assert.equal((await f.a.complete(f.p, c.challengeId)).state, "provisioned");
+  assert.equal(f.sink.writes[1].token, token);
+  assert.equal((await deliveryRow(c.challengeId)).sealed, null);
+});
