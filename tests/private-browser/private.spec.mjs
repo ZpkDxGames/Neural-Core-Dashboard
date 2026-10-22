@@ -188,6 +188,7 @@ test("private note retrieval/evidence is inert, responsive and accessible", asyn
     page.getByText("source resolution unknown", { exact: false }),
   ).toBeVisible();
   await expect(page.getByTestId("nb-markdown")).toBeVisible();
+  await expect(page.getByTestId("nb-markdown")).toHaveAttribute("aria-busy","false");
   await expect(
     page.getByText("Backend · confirmed", { exact: true }),
   ).toBeVisible();

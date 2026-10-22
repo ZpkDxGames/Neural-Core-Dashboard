@@ -1051,7 +1051,7 @@ td {
 .nb-raw-html,
 .nb-blocked,
 .nb-unresolved {
-  color: var(--nb-text-3);
+  color: var(--nb-text-2);
   border-bottom: 1px dotted var(--nb-line-strong);
 }
 .nb-image-blocked {
