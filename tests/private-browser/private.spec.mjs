@@ -177,6 +177,8 @@ test("private note retrieval/evidence is inert, responsive and accessible", asyn
   await expect(
     page.getByText("source resolution unknown", { exact: false }),
   ).toBeVisible();
+  await expect(page.getByTestId('nb-markdown')).toBeVisible();
+  await expect(page.getByText('Backend · confirmed',{exact:true})).toBeVisible();
   expect(await page.evaluate(() => window.__privateXss)).toBeUndefined();
   await mkdir('docs/phase3/evidence',{recursive:true});await page.screenshot({path:'docs/phase3/evidence/private-note-mobile.png',fullPage:true});
   const axe = await new AxeBuilder({ page }).analyze();

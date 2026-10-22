@@ -153,7 +153,7 @@ export class MemoryEngine {
   async list(identity,{limit=25,cursor=null,q=''}={}){
     if(!Number.isInteger(limit)||limit<1||limit>LIMITS.page||typeof q!=='string'||q.length>200)fail('INVALID_QUERY',400);
     return this.tx(async db=>{
-      const p=await this.authorize(db,identity,'read'),scope=hash(JSON.stringify([p.ownerId,p.principalId,p.scopes,q]));
+      const p=await this.authorize(db,identity,'read'),scope=hash(JSON.stringify(['notes-v2',p.ownerId,p.principalId,p.credentialHash,p.role,p.permissionEpoch??null,p.authorization?.sessionRef??null,p.authorization?.consentEpoch??null,[...p.scopes].sort(),q,limit]));
       const after=this.decodeCursor(cursor,scope);
       const r=await db.query(`WITH ranked AS (
         SELECT n.*,r.payload,r.verified_by,r.verified_at,
@@ -260,7 +260,7 @@ export class MemoryEngine {
     if(!states.length)fail('INVALID_QUERY',400);
     return this.tx(async db=>{
       const p=await this.authorize(db,identity,'read');
-      const scope=hash(JSON.stringify(['proposals-v1',p.ownerId,p.principalId,p.credentialHash,p.role,[...p.scopes].sort(),states,requestedTypes,limit]));
+      const scope=hash(JSON.stringify(['proposals-v1',p.ownerId,p.principalId,p.credentialHash,p.role,p.permissionEpoch??null,p.authorization?.sessionRef??null,p.authorization?.consentEpoch??null,[...p.scopes].sort(),states,requestedTypes,limit]));
       const after=this.decodeCursor(cursor,scope);
       if(after&&(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(after.at)||!Number.isFinite(Date.parse(after.at))))fail('INVALID_CURSOR',400);
       const result=await db.query(`SELECT proposal_id,note_id,principal_id,base_revision,payload,payload_hash,state,duplicate_of,created_at,

@@ -655,6 +655,7 @@ test("scoped synthetic provisioning, secret-delivery rollback, idempotent retry,
     [principalId],
   );
   for (const decision of ["rotate-agent", "revoke-agent"]) {
+    const priorCursor=decision==="rotate-agent"?(await engine.list(await engine.authenticate(agentToken),{limit:1})).nextCursor:null;
     const epoch = (
         await db.admin.query(
           "SELECT permission_epoch FROM vault_principals WHERE principal_id=$1",
@@ -687,6 +688,7 @@ test("scoped synthetic provisioning, secret-delivery rollback, idempotent retry,
       );
       agentToken = secrets.get(done.body.data.credentialHandle);
       agent = await engine.authenticate(agentToken);
+      assert.ok(priorCursor);await assert.rejects(()=>engine.list(agent,{limit:1,cursor:priorCursor}),e=>e.code==="INVALID_CURSOR");
     }
   }
   await assert.rejects(

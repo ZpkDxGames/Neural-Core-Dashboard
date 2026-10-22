@@ -148,7 +148,7 @@ export function RemoteLibrary() {
           </button>
           {data?.items.map((n) => (
             <article className="nb-panel nb-panel-body" key={n.noteId}>
-              <OriginChip origin="remote" />
+              <OriginChip origin="remote" confirmedAt={result?.confirmedAt} />
               <StatusBadge
                 status={
                   n.trust === "verified" ? "trust.verified" : "trust.proposed"
@@ -216,7 +216,7 @@ export function RemoteNote({ id }: { id: string }) {
           <State value={value} />
           {n ? (
             <>
-              <OriginChip origin="remote" />
+              <OriginChip origin="remote" confirmedAt={value?.confirmedAt} />
               <StatusBadge
                 status={
                   n.trust === "verified" ? "trust.verified" : "trust.proposed"
@@ -398,7 +398,7 @@ export function RemoteReview() {
           </button>
           {data?.items.map((item) => (
             <article className="nb-panel nb-panel-body" key={item.id}>
-              <OriginChip origin="remote" />
+              <OriginChip origin="remote" confirmedAt={value?.confirmedAt} />
               <h2>{item.title}</h2>
               <p>
                 {item.agent.displayName} · {item.agent.role} · base revision{" "}

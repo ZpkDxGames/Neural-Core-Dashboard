@@ -42,8 +42,6 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix backend --no-audit --no-fund
-      - name: Locked dependency advisory audit
-        run: npm audit --audit-level=low
       - name: Prepare isolated synthetic PostgreSQL
         run: |
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE neuralcore_api LOGIN PASSWORD 'synthetic-ci-role';"
@@ -117,6 +115,8 @@ jobs:
         run: npm run test:auth-ui
       - name: Opt-in private UI journeys (synthetic HTTP fixtures only)
         run: npm run test:private:browser
+      - name: Locked dependency advisory audit (bounded network wait)
+        run: npm audit --audit-level=low --fetch-retries=0 --fetch-timeout=15000
       - name: Retain synthetic QA evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -156,3 +156,5 @@ jobs:
             grep -q 'AUTH_NOT_CONFIGURED' /tmp/ncore-auth-result
           done
           test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3099/api/v1/ingest)" = 404
+          test "$(curl --max-time 5 -s -o /tmp/ncore-private-result -w "%{http_code}" http://127.0.0.1:3099/api/brain/v2/capability)" = 503
+          grep -q 'REMOTE_NOT_CONFIGURED' /tmp/ncore-private-result
