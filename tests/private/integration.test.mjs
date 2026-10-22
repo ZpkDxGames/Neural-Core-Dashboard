@@ -1784,3 +1784,92 @@ test("SQL issuer cannot expand a fresh rotation grant beyond its reviewed lifeti
     null,
   );
 });
+
+test("concurrent restricted SQL rotations recheck the approved epoch after the principal row lock", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  await f.a.complete(f.p, c.challengeId);
+  const rotations = [
+    await agentChallenge(f, "rotate-agent"),
+    await agentChallenge(f, "rotate-agent"),
+  ];
+  const proofs = rotations.map(() => randomBytes(32).toString("base64url"));
+  const tokens = rotations.map(
+    () => "nbv2_" + randomBytes(32).toString("base64url"),
+  );
+  for (let i = 0; i < 2; i++)
+    await db.issuerPool.query("SELECT vault_issue_bound_grant($1,$2)", [
+      rotations[i].challengeId,
+      hash(proofs[i]),
+    ]);
+  const apply = (i) =>
+    db.issuerPool.query(
+      "SELECT vault_apply_synthetic_agent($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+      [
+        "rotate-agent",
+        f.p.ownerId,
+        f.subject,
+        "",
+        "viewer",
+        [],
+        hash(tokens[i]),
+        new Date(Date.now() + 60000),
+        hash(proofs[i]),
+        f.p.authorization.sessionRef,
+      ],
+    );
+  let results;
+  if (db.runtime.startsWith("native")) {
+    // Force both transactions past the former unlocked EXISTS check before either can update.
+    await db.admin.query("BEGIN");
+    await db.admin.query(
+      "SELECT 1 FROM vault_principals WHERE principal_id=$1 FOR UPDATE",
+      [f.subject],
+    );
+    const pending = [apply(0), apply(1)];
+    let blocked = false;
+    try {
+      const until = Date.now() + 2000;
+      while (Date.now() < until) {
+        const n = (
+          await db.admin.query(
+            "SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT vault_apply_synthetic_agent%' ",
+          )
+        ).rows[0].n;
+        if (n === 2) {
+          blocked = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    } finally {
+      await db.admin.query("COMMIT");
+    }
+    results = await Promise.allSettled(pending);
+    assert.equal(
+      blocked,
+      true,
+      "both independent issuer sessions reached the principal lock",
+    );
+  } else {
+    // Serialized WASM cannot establish the native locking claim; CI above must do so.
+    results = [
+      ...(await Promise.allSettled([apply(0)])),
+      ...(await Promise.allSettled([apply(1)])),
+    ];
+  }
+  assert.equal(results.filter((x) => x.status === "fulfilled").length, 1);
+  assert.match(
+    results.find((x) => x.status === "rejected").reason.message,
+    /STALE_INTENT/,
+  );
+  const success = results.findIndex((x) => x.status === "fulfilled");
+  assert.equal(
+    (await engine.authenticate(tokens[success])).principalId,
+    f.subject,
+  );
+  await assert.rejects(
+    () => engine.authenticate(tokens[1 - success]),
+    (e) => e.status === 401,
+  );
+});

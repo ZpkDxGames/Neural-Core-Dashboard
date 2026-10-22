@@ -41,6 +41,8 @@ Fixed diagnostics are `READY`, `SINK_UNAVAILABLE`, `ACTIVATION_UNCONFIRMED`, `DE
 
 Readiness inspection found that 004's SQL rotation function checked the one-hour global cap but did not enforce the shorter lifetime approved in the rotation intent. 005 replaces only that function body to enforce the approved lifetime too; its signature, owner, fixed search path and existing ACL remain. A native regression attempts a 600-second rotation under a 120-second grant and verifies refusal without consuming the proof or changing the old credential. The BFF previously computed the requested lifetime correctly; this correction tightens the separate SQL issuer boundary.
 
+The same function formerly checked the agent's expected epoch before acquiring its row lock. Two independent issuer calls could both pass that read, wait, then update sequentially with stale grants. 005 adds the expected epoch and enabled state to the locked row predicate, which PostgreSQL reevaluates after a waiter wakes. A native regression holds the principal lock until two independent issuer sessions block, releases it, and requires exactly one rotation to commit; the other must reject with `STALE_INTENT`. Serialized local WASM exercises only sequential refusal and does not establish this concurrency result.
+
 ## Assertions and errors
 
 JWT segments must be canonical base64url. Header/payload parsing reuses the bounded duplicate-member/unsafe-key/invalid-UTF-8 rejecting JSON parser. Both must be objects. Confirmation must be an object with exactly one own `x5t#S256` member, a 43-character base64url string equal to the actual pinned TLS peer digest. Missing, null, scalar, array, extra-member and malformed confirmation payloads return `INVALID_ASSERTION` / HTTP 401.

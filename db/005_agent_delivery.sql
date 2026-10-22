@@ -51,8 +51,9 @@ BEGIN
   INSERT INTO public.vault_principals(principal_id,owner_id,display_name,kind,role,scopes,token_hash,credential_expires_at,synthetic)
    VALUES(subject,owner,display,'agent',agent_role,agent_scopes,token_digest,expiry,true);
  ELSE
-  PERFORM 1 FROM public.vault_principals WHERE principal_id=subject AND owner_id=owner AND synthetic AND kind='agent' FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'AGENT_NOT_FOUND'; END IF;
+  -- Recheck the approved epoch on the locked row, including after a concurrent waiter wakes.
+  PERFORM 1 FROM public.vault_principals WHERE principal_id=subject AND owner_id=owner AND synthetic AND kind='agent' AND disabled_at IS NULL AND permission_epoch=g.expected_revision FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'STALE_INTENT'; END IF;
   IF operation='rotate-agent' AND (token_digest !~ '^[0-9a-f]{64}$' OR expiry<=clock_timestamp() OR expiry>clock_timestamp()+interval '1 hour') THEN RAISE EXCEPTION 'INVALID_AGENT_GRANT'; END IF;
   UPDATE public.vault_principals SET permission_epoch=permission_epoch+1,
    disabled_at=CASE WHEN operation='revoke-agent' THEN clock_timestamp() ELSE disabled_at END,
