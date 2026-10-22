@@ -11,9 +11,11 @@ export class PrivateMemoryEngine extends MemoryEngine {
     });
   }
   async authenticate(token) {
-    const p = await super.authenticate(token);
-    return this.tx((db) => this.authorize(db, p, "read"));
+    // Authentication checks the current credential/expiry/epoch; action scopes
+    // are enforced by authorize(). A proposal-only agent need not hold read.
+    return super.authenticate(token);
   }
+
   async authorize(db, identity, scope) {
     await db.query("SELECT vault_lock_authorization($1,$2)", [
       identity?.principalId,

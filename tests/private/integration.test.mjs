@@ -655,6 +655,11 @@ test("scoped synthetic provisioning, secret-delivery rollback, idempotent retry,
     "UPDATE vault_principals SET credential_expires_at=now()+interval '1 hour' WHERE principal_id=$1",
     [principalId],
   );
+  await db.admin.query("UPDATE vault_principals SET scopes=ARRAY['propose','type:reference'] WHERE principal_id=$1",[principalId]);
+  const proposerOnly=await engine.authenticate(agentToken);
+  await assert.rejects(()=>engine.list(proposerOnly),e=>e.code==='ROLE_FORBIDDEN');
+  assert.equal((await engine.submit(proposerOnly,{note:note()},randomUUID())).state,'proposed');
+  await db.admin.query("UPDATE vault_principals SET scopes=ARRAY['read','propose','type:reference'] WHERE principal_id=$1",[principalId]);
   for (const decision of ["rotate-agent", "revoke-agent"]) {
     const priorCursor =
       decision === "rotate-agent"
