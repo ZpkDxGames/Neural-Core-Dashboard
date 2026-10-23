@@ -1051,7 +1051,7 @@ td {
 .nb-raw-html,
 .nb-blocked,
 .nb-unresolved {
-  color: var(--nb-text-3);
+  color: var(--nb-text-2);
   border-bottom: 1px dotted var(--nb-line-strong);
 }
 .nb-image-blocked {
@@ -1783,3 +1783,5 @@ td {
     display: block;
   }
 }
+
+.nb-private-graph { position: relative; height: clamp(380px, 60vh, 720px); border: 1px solid var(--nb-line); border-radius: var(--nb-r-lg); overflow: hidden; }

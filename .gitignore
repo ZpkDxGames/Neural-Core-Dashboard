@@ -14,3 +14,7 @@ test-results/
 docs/ui/evidence/shots/
 docs/ui/evidence/playwright-results.json
 docs/ui/evidence/full-playwright-results.json
+# Phase 3 synthetic run output belongs in CI artifacts / the candidate ZIP.
+docs/phase3/evidence/private-*.png
+docs/phase3/evidence/private-browser-results.json
+docs/phase3/evidence/native-integration.log

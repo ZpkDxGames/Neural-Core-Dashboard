@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { usePrivateMemory } from "./PrivateMemoryProvider";
+import { RemoteLibrary, RemoteNote } from "./PrivateWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
@@ -57,6 +59,8 @@ export function Library({
   selectedId?: string;
   demo?: boolean;
 }) {
+  const privateMemory=usePrivateMemory();
+  if(privateMemory.configured&&collection==="vault"&&!demo)return <RemoteLibrary />;
   return collection === "vault" ? (
     <VaultLibrary demo={demo} />
   ) : (
@@ -476,6 +480,8 @@ export function NoteReader({
     addEventListener("beforeunload", warn);
     return () => removeEventListener("beforeunload", warn);
   }, [draft, note]);
+  const privateMemory=usePrivateMemory();
+  if(privateMemory.configured&&!demo)return <RemoteNote id={id}/>;
   if (!note)
     return (
       <>

@@ -120,7 +120,9 @@ export interface NoteDetail extends NoteSummary {
 export interface AgentPrincipal {
   agentId: string;
   displayName: string;
-  role: "viewer" | "contributor" | "maintainer";
+  role: "viewer" | "contributor" | "maintainer" | "owner";
+  kind?: "agent" | "owner";
+  expiresAt?: string;
   scopes: string[];
   disabledAt?: string;
 }
@@ -134,6 +136,8 @@ export interface Proposal {
   evidence: EvidenceRef[];
   evidenceStatus?: { resolvable: number; total: number };
   baseRevision?: number;
+  intentSha256?: string;
+  body?: string;
   conflictsWith?: string[];
   origin: DataOrigin;
 }
@@ -161,3 +165,5 @@ export interface ConnectionInput {
   now: number;
   staleAfterMs: number;
 }
+
+export interface ReviewReceipt {id:string;state?:string;challengeId?:string;noteId?:string;revision?:number;decision?:string;subjectId?:string;expectedRevision?:number;intentSha256?:string;preview?:{title:string;body:string}}

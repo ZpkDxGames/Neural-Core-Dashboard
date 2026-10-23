@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import {usePrivateMemory} from "./PrivateMemoryProvider";
+import {RemoteReview,RemoteRegistry} from "./PrivateWorkspace";
 import { useState, useMemo } from "react";
 import { FlaskConical } from "lucide-react";
 import {
@@ -67,6 +69,9 @@ export function ConflictDiff({
 }
 export function Agents({ tab = "review" }: { tab?: string }) {
   const [demo, setDemo] = useState(false);
+  const privateMemory=usePrivateMemory();
+  if(privateMemory.configured&&tab==="review")return <RemoteReview/>;
+  if(privateMemory.configured&&tab==="identities")return <RemoteRegistry/>;
   return (
     <>
       <SectionHeading

@@ -1,0 +1,265 @@
+{
+  "baseline": "108b6357cc8778d570657ebf569c2de0043b1f4e",
+  "tests": 332,
+  "originalBrowserCases": 141,
+  "files": [
+    {
+      "path": "backend/core-server.test.mjs",
+      "bytes": 2944,
+      "sha256": "ed1590a9f2ac885b448ce826b7065e32b36695713789d66cbe2286956a5868e7",
+      "prefix": false
+    },
+    {
+      "path": "backend/memory-api.test.mjs",
+      "bytes": 5456,
+      "sha256": "fb4fdac2eb97bb99481d23ced272288478fdb5c2fb8d714b17055e6c5c8e3b67",
+      "prefix": false
+    },
+    {
+      "path": "backend/migration-rollback.test.mjs",
+      "bytes": 1139,
+      "sha256": "9efd2b1b0a4b072a775c6d2e8dc47b512a6421b3c503e70c8e46510cdae354d5",
+      "prefix": false
+    },
+    {
+      "path": "backend/postgres-integration.test.mjs",
+      "bytes": 4432,
+      "sha256": "2f2c6f4c69a6b7772d755e02e51060f157201310c27cfe6d97ad3b4a968df020",
+      "prefix": false
+    },
+    {
+      "path": "backend/v2/api.test.mjs",
+      "bytes": 3768,
+      "sha256": "10711bd0c80c2fd90f846a90f8e63f6933b83624f44ca084454f83c19f1e9c7d",
+      "prefix": false
+    },
+    {
+      "path": "backend/v2/integration.test.mjs",
+      "bytes": 28707,
+      "sha256": "673f2487bd113fd464938c082b63c13c06f739675a9276eca81c73f76e9a3a30",
+      "prefix": false
+    },
+    {
+      "path": "backend/v2/note.test.mjs",
+      "bytes": 4409,
+      "sha256": "7254891752b6eccd6280a91177589d491c175497fe99b7f69d6d4f7671bc6c7f",
+      "prefix": false
+    },
+    {
+      "path": "backend/v2/vault.test.mjs",
+      "bytes": 4540,
+      "sha256": "a52104898c1c143f59da92dcfc41104a8b6c4f9b2ee4ed2f86e62f931c119184",
+      "prefix": false
+    },
+    {
+      "path": "playwright.config.mjs",
+      "bytes": 734,
+      "sha256": "7be7a53e409e3f06bc29116c09fb6c26bfeec355d60b0d92f28bae7f3ed538c5",
+      "prefix": false
+    },
+    {
+      "path": "playwright.private.config.mjs",
+      "bytes": 493,
+      "sha256": "bc51d56d807430ed8034b496a1f86bdc1e0b786d9107f787d1f8e79574e3858d",
+      "prefix": false
+    },
+    {
+      "path": "tests/archive.test.mjs",
+      "bytes": 3083,
+      "sha256": "57e041816c8e423380ea5af2d241b5d1e811159861cb6c3feabc14d75573507c",
+      "prefix": false
+    },
+    {
+      "path": "tests/brain/connection.test.ts",
+      "bytes": 3901,
+      "sha256": "22b5db0ebf74b7e16546370dd1e2eee903d05adaad7077c01a32866985eea035",
+      "prefix": false
+    },
+    {
+      "path": "tests/brain/contracts.test.mjs",
+      "bytes": 3751,
+      "sha256": "6f16e5cf873dc4cddfd1cc0f4e6b334e68001464e63a82a155c89e91d3331650",
+      "prefix": false
+    },
+    {
+      "path": "tests/brain/lifecycle.test.mjs",
+      "bytes": 3956,
+      "sha256": "94df0888d0da85e810b3439dc3be7776e325324b1cd0af253d9015452758d38c",
+      "prefix": false
+    },
+    {
+      "path": "tests/brain/links.test.ts",
+      "bytes": 2448,
+      "sha256": "69b49a301fd23fa2900babff87ebde2695f8d5c22a47bd4a50229382edd0fe3d",
+      "prefix": false
+    },
+    {
+      "path": "tests/brain/spatial.test.ts",
+      "bytes": 2733,
+      "sha256": "41d1a97502d91b06cf69d08b11ca2a7c2d8b47d06130e50acacabeb1785beef3",
+      "prefix": false
+    },
+    {
+      "path": "tests/brain/windowed.test.ts",
+      "bytes": 799,
+      "sha256": "9c5327674d467eaef5d4fa5d0389a255210a11818a06cacf8b07d65dcb678e00",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/graphics.spec.mjs",
+      "bytes": 3203,
+      "sha256": "2baf5ee4314f7703c06380421b18f1b8752acc83d8ca294113d58a316284da22",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/markdown.spec.mjs",
+      "bytes": 3735,
+      "sha256": "705ed254cb2b010c51d1ebebdc173f1c673a0174aa2041618a0e024236424969",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/owner-auth.spec.mjs",
+      "bytes": 6168,
+      "sha256": "851b2310338b2b00dba6dd6cc84aef03d7f8df4d33f38cdd0f8709f6cb293597",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/performance.spec.mjs",
+      "bytes": 7900,
+      "sha256": "77ee47a061c2774d32996bc9fec260bfbb78fcc484cd31262ec5584879dbfc73",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/protocol.spec.mjs",
+      "bytes": 4995,
+      "sha256": "ab3a11eda37ffa9f2a62a38042d8187fb5699587ce70f4144cbd329620771b8a",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/v2.spec.mjs",
+      "bytes": 14484,
+      "sha256": "715908c39453f339d504c92fb58301d7a02dbb268472ab94f73c2ac71babd3bb",
+      "prefix": false
+    },
+    {
+      "path": "tests/browser/visual.spec.mjs",
+      "bytes": 7954,
+      "sha256": "73836089e11cdd0f0b87aaf03406f5a0a4a73b6ecd19d9e4d60e75deefe996ef",
+      "prefix": false
+    },
+    {
+      "path": "tests/concepts.test.mjs",
+      "bytes": 3045,
+      "sha256": "8f1430bbd72309bf282c539b7963678fd40970967fd9f12b8d0ecddf996d68cf",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-auth.test.mjs",
+      "bytes": 10938,
+      "sha256": "1b6fb4100587e7d8d074b0844158b0529661939a7f8bb9e2aed29694baeeb535",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-oidc.test.mjs",
+      "bytes": 5044,
+      "sha256": "72c24cc9e5cdf278747ab24e652824f006ac37547bbfd895551a0bc58b0bfd85",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-redis-live.test.mjs",
+      "bytes": 5292,
+      "sha256": "25e050075c77378230ffe085539a445054c3aa78433cc3b41485a7494ccdc8a0",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-redis.test.mjs",
+      "bytes": 3252,
+      "sha256": "1b7f7815f61cef57fa1ee21c5d0d2b23f4df79e05f4bc966a377ab04706f093a",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-route.test.mjs",
+      "bytes": 1995,
+      "sha256": "69af3be57a6c39dacaeb09d3cb1b840829a9023ac4bb7c61810cb6a857d3ce96",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-runtime-contract.test.mjs",
+      "bytes": 1312,
+      "sha256": "849e70d8161ea35c01918fdc9f86786597a9906fa88d48925da71f5384bd8ed0",
+      "prefix": false
+    },
+    {
+      "path": "tests/owner-security.test.mjs",
+      "bytes": 8937,
+      "sha256": "c4a24dccbcee25d2bfd47ef7302edc030e94b12494a294573718c45ceaaf651b",
+      "prefix": false
+    },
+    {
+      "path": "tests/private-browser/private.spec.mjs",
+      "bytes": 9964,
+      "sha256": "6173d594ae4b35e81ab00a8585a7ee4b352f8debce8b68eafa2cbc4dfcce3f28",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/adapter.test.mjs",
+      "bytes": 7018,
+      "sha256": "f0db60855a249e95af908a97bc94eb90151f5526e409a2a9253356f53c18c843",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/assertions.test.mjs",
+      "bytes": 3978,
+      "sha256": "d95c56c764dbb920f38ab75df8b971292aa4942f469804c97f5c1c44075ee13b",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/bff.test.mjs",
+      "bytes": 7425,
+      "sha256": "7b1a28d2de6461f9e912f54b15af77874bddac578b87f886b5be31f768b004b5",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/deadline.test.mjs",
+      "bytes": 700,
+      "sha256": "be6d4573144ef64eed43dd6c1406ad2b0b9dd952b4ddc8d5bce348a60c91758e",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/delivery.test.mjs",
+      "bytes": 1552,
+      "sha256": "4e96e71928766cd92310e0e9f1140e9075d6ab75b64721ff11e06e3cc4b982d5",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/integration.test.mjs",
+      "bytes": 65335,
+      "sha256": "c882d6081156689515902e2bc2d73fbb1fbbf1dbd4bc4dbee721a2511901afe5",
+      "prefix": true
+    },
+    {
+      "path": "tests/private/malformed-assertions.test.mjs",
+      "bytes": 4557,
+      "sha256": "0c598a216f0b0fdb4e442a16910c431a6a52ad8c18d7374ce75b6871f7c5250d",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/oidc.test.mjs",
+      "bytes": 3491,
+      "sha256": "7c8915d78db7af238d01319a89a15e523ccd23a65f37adee9a06a1237219f2d6",
+      "prefix": false
+    },
+    {
+      "path": "tests/private/owner-access.test.mjs",
+      "bytes": 3178,
+      "sha256": "0c4ec0bd6dc95282f6f8233b1212fe9b63ef48b1dea381dfcd43622d45bd7a0b",
+      "prefix": false
+    },
+    {
+      "path": "tests/sync-policy.test.mjs",
+      "bytes": 1397,
+      "sha256": "03c6ffae526097a63dc9ad6b2f607a7de1a0c52ccab1640f44110d57565d954d",
+      "prefix": false
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Phase 3.2 source verification
+
+Verified GitHub before edits: PR #9 is open/draft at `108b6357cc8778d570657ebf569c2de0043b1f4e`, based on PR #8 at `268038530cfc20dbeec4a6b1404d91e5dd4cddaf`. PR #7 remains `87a72ed4a309bf560f164c44757b0ff7937fd5ff`. Main is `75157ad2d60e337a326a1d459496bedfba4a0fab`; preview/PR #6 `525dcb070c158e6cb485785ba659d0d114b9a30f`; PR #4 `30399e771b1a07a62c882e31327d61530b54eed6`; PR #5 `b73566cc8a6ccae45438c3e7488a413e2bbbbbd0`.
+
+The checkout was clean at the recorded baseline. Read AGENTS.md, original architectural/source/security/QA/data contracts and current Phase 3/3.1 architecture, security and staging documents. Inspected owner OIDC/session-family creation, rotation/logout/relogin, primary Redis reads, BFF/transport, gateway assertions/replay, issuer/private engine/proof/SQL locks and encrypted credential delivery. Work uses isolated local branch `development/neural-brain-v2-phase32-revocation`; only PR #9's existing draft branch is advanced with an expected-head lease after validation. No unrelated source or historic migration is overwritten.
+
+The Phase 3.1 independent review mentioned in the request is unavailable in the supplied files and recent-upload/search inventory. The available Phase 3 review is identified separately, without relabeling it. See SECURITY_FINDINGS.md for that input gap. No deployed environment was activated or modified, and no deployed ref is certified as running this candidate.
+
+Scope: commit-ordered owner-family retirement, restricted monotonic SQL sessions (new explicit 006), consistent private owner-context rejection, regression/evidence and readiness documentation. Default-off capability/freshness gates, existing grants, AES-GCM custody, delivery retry/generation fences, frontend components and original browser cases remain. Final GitHub identities, exact source-blob verification, full source diff and CI run/artifact checks are in the delivered certification and evidence.

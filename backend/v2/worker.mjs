@@ -106,7 +106,7 @@ export class VaultWorker {
       const n=(await db.query('SELECT * FROM vault_notes WHERE note_id=$1 FOR UPDATE',[event.note_id])).rows[0];
       const locked=(await db.query('SELECT * FROM vault_outbox WHERE event_id=$1 FOR UPDATE',[eventId])).rows[0];
       if(n.current_revision!==expectedRevision||!['failed','conflict'].includes(locked.state))fail('REVISION_CONFLICT',409);
-      await this.engine.consumeProof(db,p,proof,'repair:'+eventId,expectedRevision);
+      await this.engine.consumeProof(db,p,proof,'repair:'+eventId,expectedRevision,{action:'repair',intentHash:hash(JSON.stringify({eventId,expectedRevision,expectedHash:locked.expected_hash?.trim()??null}))});
       const file=await this.vault.read(p.ownerId,n.canonical_path);
       if(file&&file.hash!==n.published_hash?.trim()){
         const desired=(await db.query('SELECT content_hash FROM vault_revisions WHERE note_id=$1 AND revision=$2',[n.note_id,n.current_revision])).rows[0]?.content_hash.trim();
