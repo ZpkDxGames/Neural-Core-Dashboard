@@ -1,5 +1,7 @@
 # Private staging activation — separate owner approval required
 
+Complete the [Phase 3.2 session-revocation readiness supplement](../phase32/STAGING_READINESS_CHECKLIST.md) as well. A Redis-only deletion is not a completed SQL authorization fence.
+
 No item below has been activated by this development phase. Record a concrete configuration diff, source SHA, reviewers, rollback owner and evidence before requesting activation approval. A missing qualification is a no-go.
 
 ## 1. Source and isolation
@@ -21,7 +23,7 @@ No item below has been activated by this development phase. Record a concrete co
 - [ ] Take a separately approved synthetic pre-migration backup. Apply 001–005 only to the disposable staging database through the administrator's checksum-ledger workflow. Check rollback and all earlier migration hashes. The runtime must not read encrypted delivery material or change its metadata.
 - [ ] Use distinct API and issuer logins; issuer receives only reviewed membership. API must not insert principals/grants, mutate grant binding columns, change consent or invoke issuer/admin functions. Confirm UPDATE(used_at) only and immutable revisions.
 - [ ] Administrator maps the intended immutable Google subject's hash to the pinned owner principal. Do not trust a browser owner/role header or an email string as identity.
-- [ ] Supply an online primary session-family verifier using the existing auth namespace. Verify real logout/rotation/expiration/store outage with independent requests and no positive cache. Check concurrent revocation/decision linearization and epoch changes.
+- [ ] Supply an online primary session-family verifier using the existing auth namespace. Verify real logout/rotation/expiration/store outage with independent requests and no positive cache. Require the coordinated SQL fence on every owner-auth instance; qualify lock contention, commit ordering, uncertain acknowledgments and epoch changes under the Phase 3.2 semantics.
 
 ## 4. Existing login and fresh Google authentication
 

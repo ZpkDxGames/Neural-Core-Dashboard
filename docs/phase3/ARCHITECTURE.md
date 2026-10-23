@@ -1,5 +1,7 @@
 # Phase 3 architecture
 
+Phase 3.2 defines owner-family retirement and its SQL commit fence; see [revocation semantics](../phase32/ARCHITECTURE.md). Primary Redis checks alone do not cancel an already admitted SQL transaction. Explicit migration 006 is required for the hardened composition.
+
 Phase 3.1 supersedes the synthetic credential delivery ordering below; see [delivery architecture](../phase31/ARCHITECTURE.md) and [security-readiness inspection](../phase31/SECURITY_READINESS.md). Explicit migration 005 is required for that development composition. No runtime activation is authorized.
 
 ## Boundaries

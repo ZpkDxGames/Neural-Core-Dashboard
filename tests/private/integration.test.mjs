@@ -1917,3 +1917,861 @@ test("PostgreSQL deferred constraint rejects COMMIT after sink success without a
   assert.equal(f.sink.writes[1].token, token);
   assert.equal((await deliveryRow(c.challengeId)).sealed, null);
 });
+
+// Phase 3.2 additions. All 332 baseline cases are retained unchanged.
+function transactionBarrier(pool, match, { beforeCommit = false } = {}) {
+  let reached, release;
+  const entered = new Promise((r) => (reached = r));
+  const gate = new Promise((r) => (release = r));
+  let armed = true;
+  return {
+    entered,
+    release,
+    pool: {
+      async connect() {
+        const client = await pool.connect();
+        let selected = false;
+        return {
+          async query(sql, args) {
+            if (match(sql, args)) selected = true;
+            if (beforeCommit && selected && armed && sql === "COMMIT") {
+              armed = false;
+              reached();
+              await gate;
+            }
+            const result = await client.query(sql, args);
+            if (!beforeCommit && selected && armed) {
+              armed = false;
+              reached();
+              await gate;
+            }
+            return result;
+          },
+          release: (...args) => client.release(...args),
+        };
+      },
+    },
+  };
+}
+test("raw Redis invalidation is not a PostgreSQL commit fence: deterministic precommit control", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  const barrier = transactionBarrier(
+    db.issuerPool,
+    (sql) => sql.includes("SET consumed_at="),
+    { beforeCommit: true },
+  );
+  f.a.issuerPool = barrier.pool;
+  const completion = f.a.complete(f.p, c.challengeId);
+  try {
+    await barrier.entered;
+    primarySessions.delete(f.p.authorization.sessionRef);
+  } finally {
+    barrier.release();
+  }
+  assert.equal((await completion).state, "provisioned");
+  assert.equal(
+    (await engine.authenticate(f.sink.writes[0].token)).principalId,
+    f.subject,
+  );
+  assert.equal((await principalRows(f)).length, 1);
+  assert.ok(
+    (
+      await db.admin.query(
+        "SELECT receipt FROM vault_owner_challenges WHERE challenge_id=$1",
+        [c.challengeId],
+      )
+    ).rows[0].receipt,
+  );
+});
+
+const revocationClaims = (p) => ({
+  sub: p.principalId,
+  owner: p.ownerId,
+  session_ref: p.authorization.sessionRef,
+  identity_hash: p.authorization.identityHash,
+  session_expires_at: p.sessionExpiresAt,
+  principal_epoch: 0,
+  consent_epoch: 0,
+});
+const revocationContext = (p) => ({
+  principalId: p.principalId,
+  ownerId: p.ownerId,
+  sessionRef: p.authorization.sessionRef,
+  identityHash: p.authorization.identityHash,
+  sessionExpiresAt: p.sessionExpiresAt,
+  principalEpoch: 0,
+  consentEpoch: 0,
+});
+async function assertSessionWaiter() {
+  // WASM serializes clients; only native PostgreSQL can prove independent lock contention.
+  if (!db.runtime.startsWith("native")) return;
+  const until = Date.now() + 1500;
+  while (Date.now() < until) {
+    await db.admin.query("SELECT pg_stat_clear_snapshot()");
+    const row = (
+      await db.admin.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname=current_database() AND wait_event_type='Lock'
+      AND query LIKE 'SELECT * FROM vault_private_sessions WHERE session_ref_hash=%FOR UPDATE'`)
+    ).rows[0];
+    if (row.n > 0) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  assert.fail(
+    "Independent session revoker did not block on the held authorization lock",
+  );
+}
+async function reviewFixture() {
+  const f = await hardeningFixture();
+  const proposed = await engine.submit(
+    f.p,
+    {
+      note: {
+        ...note(),
+        evidence: [{ kind: "manual", reason: "SYNTH revocation fixture" }],
+      },
+    },
+    randomUUID(),
+  );
+  const row = (
+    await db.admin.query("SELECT * FROM vault_proposals WHERE proposal_id=$1", [
+      proposed.proposalId,
+    ])
+  ).rows[0];
+  const c = await f.a.challenge(f.p, {
+    subjectId: proposed.proposalId,
+    expectedRevision: 0,
+    decision: "verify",
+    intentSha256: row.payload_hash.trim(),
+  });
+  await f.a.fresh(f.p, c.challengeId, {
+    identityHash: f.p.authorization.identityHash,
+    authTime: Math.floor(Date.now() / 1000),
+  });
+  return { ...f, c, proposed };
+}
+async function assertNoDecision(f) {
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT state FROM vault_proposals WHERE proposal_id=$1",
+        [f.proposed.proposalId],
+      )
+    ).rows[0].state,
+    "proposed",
+  );
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT receipt FROM vault_owner_challenges WHERE challenge_id=$1",
+        [f.c.challengeId],
+      )
+    ).rows[0].receipt,
+    null,
+  );
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT count(*)::int AS n FROM vault_review_grants WHERE session_ref_hash=$1",
+        [f.p.authorization.sessionRef],
+      )
+    ).rows[0].n,
+    0,
+  );
+}
+test("revocation before SQL authorization rejects cached owner context, pending grants and every sensitive action with 401", async () => {
+  const f = await reviewFixture();
+  const proof = randomBytes(32).toString("base64url");
+  await db.issuerPool.query("SELECT vault_issue_bound_grant($1,$2)", [
+    f.c.challengeId,
+    hash(proof),
+  ]);
+  assert.equal((await f.a.revokeSession(revocationClaims(f.p))).revoked, true);
+  // Redis intentionally remains present: the SQL fence alone must deny every cached identity.
+  assert.ok(primarySessions.has(f.p.authorization.sessionRef));
+  for (const scope of ["read", "propose", "review", "delete", "export"])
+    await assert.rejects(
+      () => engine.tx((client) => engine.authorize(client, f.p, scope)),
+      (e) => e.code === "NO_OWNER_SESSION" && e.status === 401,
+    );
+  await assert.rejects(
+    () => f.a.complete(f.p, f.c.challengeId),
+    (e) => e.status === 401,
+  );
+  await assert.rejects(
+    () =>
+      db.issuerPool.query("SELECT vault_issue_bound_grant($1,$2)", [
+        f.c.challengeId,
+        hash(randomUUID()),
+      ]),
+    /STALE_AUTHORIZATION/,
+  );
+  await assert.rejects(
+    () =>
+      engine.review(f.p, f.proposed.proposalId, {
+        decision: "verify",
+        expectedRevision: 0,
+        proof,
+      }),
+    (e) => e.status === 401,
+  );
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT used_at FROM vault_review_grants WHERE proof_hash=$1",
+        [hash(proof)],
+      )
+    ).rows[0].used_at,
+    null,
+  );
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT state FROM vault_proposals WHERE proposal_id=$1",
+        [f.proposed.proposalId],
+      )
+    ).rows[0].state,
+    "proposed",
+  );
+});
+test("a private owner identity cannot omit its session context to bypass the revocation fence", async () => {
+  const f = await reviewFixture(),
+    { authorization, ...unbound } = f.p;
+  await f.a.revokeSession(revocationClaims(f.p));
+  for (const scope of ["read", "propose", "review", "delete", "export"])
+    await assert.rejects(
+      () => engine.tx((client) => engine.authorize(client, unbound, scope)),
+      (e) => e.code === "NO_OWNER_SESSION" && e.status === 401,
+    );
+  await assertNoDecision(f);
+});
+for (const phase of ["during execution", "immediately before commit"]) {
+  test(
+    "SQL session revocation " +
+      phase +
+      " drains the admitted decision before acknowledging its fence",
+    async () => {
+      const f = await reviewFixture();
+      const barrier = transactionBarrier(
+        db.issuerPool,
+        (sql) =>
+          phase === "during execution"
+            ? sql.startsWith("SELECT vault_issue_bound_grant")
+            : sql.includes("SET consumed_at="),
+        { beforeCommit: phase !== "during execution" },
+      );
+      f.a.issuerPool = barrier.pool;
+      const completion = f.a.finishCompletion(f.p, f.c.challengeId, null);
+      let revoked = false,
+        revocation;
+      try {
+        await barrier.entered;
+        revocation = f.a.revokeSession(revocationClaims(f.p)).then((r) => {
+          revoked = true;
+          return r;
+        });
+        await assertSessionWaiter();
+        assert.equal(revoked, false);
+        assert.ok(primarySessions.has(f.p.authorization.sessionRef));
+      } finally {
+        barrier.release();
+      }
+      assert.equal((await completion).state, "pending");
+      assert.equal((await revocation).revoked, true);
+      const s = (
+        await db.admin.query(
+          "SELECT * FROM vault_private_sessions WHERE session_ref_hash=$1",
+          [f.p.authorization.sessionRef],
+        )
+      ).rows[0];
+      assert.ok(s.revoked_at);
+      assert.equal(s.consented, false);
+      await assert.rejects(
+        () => f.a.finishCompletion(f.p, f.c.challengeId, null),
+        (e) => e.status === 401,
+      );
+      assert.equal(
+        (
+          await db.admin.query(
+            "SELECT count(*)::int AS n FROM vault_revisions WHERE note_id=$1",
+            [f.proposed.noteId],
+          )
+        ).rows[0].n,
+        1,
+      );
+    },
+  );
+}
+test("a revocation transaction holding the session lock wins before a later authorization and cannot be bypassed by bootstrap", async () => {
+  const f = await reviewFixture();
+  const barrier = transactionBarrier(
+    db.issuerPool,
+    (sql) => sql.startsWith("UPDATE vault_private_sessions SET revoked_at="),
+    { beforeCommit: true },
+  );
+  f.a.issuerPool = barrier.pool;
+  const revoking = f.a.revokeSession(revocationClaims(f.p));
+  let operation;
+  try {
+    await barrier.entered;
+    operation = engine
+      .tx((client) => engine.authorize(client, f.p, "review"))
+      .then(
+        () => null,
+        (e) => e,
+      );
+  } finally {
+    barrier.release();
+  }
+  await revoking;
+  assert.equal((await operation).status, 401);
+  await assert.rejects(
+    () => f.a.resolve(revocationClaims(f.p), { bootstrap: true }),
+    (e) => e.status === 401,
+  );
+  await assert.rejects(
+    () => f.a.consent(f.p, true),
+    (e) => e.status === 401,
+  );
+  await assertNoDecision(f);
+});
+test("revocation after a committed decision does not undo its receipt or outbox, and denies replay under the retired family", async () => {
+  const f = await reviewFixture(),
+    committed = await f.a.complete(f.p, f.c.challengeId);
+  await f.a.revokeSession(revocationClaims(f.p));
+  assert.equal(committed.state, "pending");
+  const receipt = (
+    await db.admin.query(
+      "SELECT receipt FROM vault_owner_challenges WHERE challenge_id=$1",
+      [f.c.challengeId],
+    )
+  ).rows[0].receipt;
+  const { replayed, ...decision } = committed;
+  assert.equal(replayed, false);
+  assert.deepEqual(receipt, decision);
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT count(*)::int AS n FROM vault_outbox WHERE event_id=$1",
+        [committed.eventId],
+      )
+    ).rows[0].n,
+    1,
+  );
+  await assert.rejects(
+    () => f.a.complete(f.p, f.c.challengeId),
+    (e) => e.status === 401,
+  );
+});
+test("revocation during delivered-credential retry prevents activation and bounded cleanup erases the pending ciphertext", async () => {
+  const f = await hardeningFixture(),
+    c = await agentChallenge(f);
+  f.a.issuerPool = failTransaction(db.issuerPool, "activate");
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    /SYNTHETIC_COMMIT_FAILURE/,
+  );
+  const token = f.sink.writes[0].token;
+  f.a.issuerPool = db.issuerPool;
+  await f.a.revokeSession(revocationClaims(f.p));
+  await assert.rejects(
+    () => f.a.complete(f.p, c.challengeId),
+    (e) => e.status === 401,
+  );
+  await assert.rejects(
+    () => engine.authenticate(token),
+    (e) => e.status === 401,
+  );
+  assert.equal((await principalRows(f)).length, 0);
+  const row = await deliveryRow(c.challengeId);
+  assert.equal(row.state, "cancelled");
+  assert.equal(row.sealed, null);
+});
+test("gateway revocation is idempotent after lost acknowledgment, binds the family and rejects replay and malformed input", async () => {
+  const f = await hardeningFixture(),
+    ctx = revocationContext(f.p);
+  const result = await call("POST", "/v2/private/session/revoke", {}, ctx);
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(result.body.data, {
+    revoked: true,
+    sessionRef: ctx.sessionRef,
+  });
+  const epoch = (
+    await db.admin.query(
+      "SELECT consent_epoch FROM vault_private_sessions WHERE session_ref_hash=$1",
+      [ctx.sessionRef],
+    )
+  ).rows[0].consent_epoch;
+  assert.equal(
+    (await call("POST", "/v2/private/session/revoke", {}, ctx)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await db.admin.query(
+        "SELECT consent_epoch FROM vault_private_sessions WHERE session_ref_hash=$1",
+        [ctx.sessionRef],
+      )
+    ).rows[0].consent_epoch,
+    epoch,
+  );
+  assert.equal(
+    (await call("GET", "/v2/private/session", undefined, ctx)).status,
+    401,
+  );
+  assert.equal(
+    (
+      await call(
+        "POST",
+        "/v2/private/session/revoke",
+        { sessionRef: hash("forged") },
+        ctx,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await call(
+        "POST",
+        "/v2/private/session/revoke",
+        {},
+        { ...ctx, identityHash: hash("forged") },
+      )
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await call(
+        "POST",
+        "/v2/private/session/revoke",
+        {},
+        { ...ctx, principalEpoch: 1 },
+      )
+    ).status,
+    403,
+  );
+  const target = "/v2/private/session/revoke",
+    body = Buffer.from("{}");
+  const jwt = signAssertion({
+    key: signing.privateKey,
+    kid: "synthetic",
+    context: ctx,
+    method: "POST",
+    target,
+    body,
+    thumbprint: certs.client.thumbprint,
+  });
+  const raw = () =>
+    new Promise((resolve, reject) => {
+      const req = request(
+        {
+          hostname: "127.0.0.1",
+          port: server.address().port,
+          path: target,
+          method: "POST",
+          ...certs.client,
+          minVersion: "TLSv1.3",
+          maxVersion: "TLSv1.3",
+          headers: {
+            authorization: "Bearer " + jwt,
+            "content-type": "application/json",
+            "content-length": body.length,
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode));
+        },
+      );
+      req.on("error", reject);
+      req.end(body);
+    });
+  assert.equal(await raw(), 200);
+  assert.equal(await raw(), 401);
+});
+test("revoking a not-yet-bootstrapped family creates a permanent SQL tombstone", async () => {
+  const f = await hardeningFixture(),
+    claims = { ...revocationClaims(f.p), session_ref: hash(randomUUID()) };
+  primarySessions.set(claims.session_ref, {
+    expiresAt: claims.session_expires_at * 1000,
+  });
+  await f.a.revokeSession(claims);
+  await assert.rejects(
+    () => f.a.resolve(claims, { bootstrap: true }),
+    (e) => e.status === 401,
+  );
+  await f.a.revokeSession(claims);
+  assert.ok(
+    (
+      await db.admin.query(
+        "SELECT revoked_at FROM vault_private_sessions WHERE session_ref_hash=$1",
+        [claims.session_ref],
+      )
+    ).rows[0].revoked_at,
+  );
+});
+test("006 rollback/checksum, column privileges and monotonic tombstones prevent SQL resurrection", async () => {
+  const { applySessionMigration } =
+    await import("../../backend/v2/private/session-migrate.mjs");
+  assert.equal(
+    (await applySessionMigration(db.admin)).state,
+    "already-applied",
+  );
+  const f = await hardeningFixture(),
+    ref = f.p.authorization.sessionRef;
+  const rights = (
+    await db.admin.query(`SELECT
+    has_column_privilege('neuralcore_issuer','vault_private_sessions','expires_at','UPDATE') AS expiry,
+    has_column_privilege('neuralcore_issuer','vault_private_sessions','identity_hash','UPDATE') AS identity,
+    has_column_privilege('neuralcore_issuer','vault_private_sessions','revoked_at','UPDATE') AS revokes,
+    has_table_privilege('neuralcore_api','vault_private_sessions','UPDATE') AS api,
+    has_table_privilege('neuralcore_issuer','vault_private_sessions','DELETE') AS deletes,
+    has_function_privilege('neuralcore_issuer','vault_preserve_session_fence()','EXECUTE') AS trigger`)
+  ).rows[0];
+  assert.deepEqual(rights, {
+    expiry: false,
+    identity: false,
+    revokes: true,
+    api: false,
+    deletes: false,
+    trigger: false,
+  });
+  await assert.rejects(
+    () =>
+      db.issuerPool.query(
+        "UPDATE vault_private_sessions SET expires_at=expires_at+interval '1 hour' WHERE session_ref_hash=$1",
+        [ref],
+      ),
+    /permission denied/,
+  );
+  await f.a.revokeSession(revocationClaims(f.p));
+  for (const sql of [
+    "SET revoked_at=NULL",
+    "SET consented=true",
+    "SET consent_epoch=consent_epoch-1",
+  ])
+    await assert.rejects(
+      () =>
+        db.issuerPool.query(
+          "UPDATE vault_private_sessions " + sql + " WHERE session_ref_hash=$1",
+          [ref],
+        ),
+      /SESSION_REVOKED|SESSION_BINDING_IMMUTABLE/,
+    );
+  await db.admin.query(
+    "UPDATE schema_migrations SET sha256=repeat('0',64) WHERE version=6",
+  );
+  await assert.rejects(() => applySessionMigration(db.admin), /checksum drift/);
+  await db.admin.query(
+    "UPDATE schema_migrations SET sha256=$1 WHERE version=6",
+    [
+      hash(
+        await readFile(
+          new URL("../../db/006_session_revocation.sql", import.meta.url),
+          "utf8",
+        ),
+      ),
+    ],
+  );
+});
+
+test("a genuine PostgreSQL revocation COMMIT failure is 503 and rolls back the fence; retry remains possible", async () => {
+  const f = await reviewFixture(),
+    ctx = revocationContext(f.p);
+  await db.admin
+    .query(`CREATE FUNCTION synthetic_revoke_commit_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.session_ref_hash='${ctx.sessionRef}' AND NEW.revoked_at IS NOT NULL THEN
+      RAISE EXCEPTION 'SYNTHETIC_REVOCATION_COMMIT_FAILURE'; END IF; RETURN NEW; END $$`);
+  await db.admin
+    .query(`CREATE CONSTRAINT TRIGGER synthetic_revoke_commit_failure AFTER UPDATE ON vault_private_sessions
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION synthetic_revoke_commit_failure()`);
+  try {
+    const result = await call("POST", "/v2/private/session/revoke", {}, ctx);
+    assert.equal(result.status, 503);
+    assert.equal(result.body.error, "PRIVATE_SERVICE_UNAVAILABLE");
+    assert.equal(
+      (
+        await db.admin.query(
+          "SELECT revoked_at FROM vault_private_sessions WHERE session_ref_hash=$1",
+          [ctx.sessionRef],
+        )
+      ).rows[0].revoked_at,
+      null,
+    );
+    await engine.tx((client) => engine.authorize(client, f.p, "review"));
+    await assertNoDecision(f);
+  } finally {
+    await db.admin.query(
+      "DROP TRIGGER synthetic_revoke_commit_failure ON vault_private_sessions",
+    );
+    await db.admin.query("DROP FUNCTION synthetic_revoke_commit_failure()");
+  }
+  assert.equal(
+    (await call("POST", "/v2/private/session/revoke", {}, ctx)).status,
+    200,
+  );
+});
+test("lost SQL revocation commit acknowledgment fails closed; concurrent HTTP retries converge on one immutable fence", async () => {
+  const f = await hardeningFixture(),
+    ctx = revocationContext(f.p),
+    original = authority.issuerPool;
+  let lost = false;
+  authority.issuerPool = {
+    async connect() {
+      const client = await original.connect();
+      let revokes = false;
+      return {
+        async query(sql, args) {
+          if (sql.startsWith("UPDATE vault_private_sessions SET revoked_at="))
+            revokes = true;
+          const result = await client.query(sql, args);
+          if (sql === "COMMIT" && revokes && !lost) {
+            lost = true;
+            throw Error("SYNTHETIC_LOST_REVOCATION_ACK");
+          }
+          return result;
+        },
+        release: (e) => client.release(e),
+      };
+    },
+  };
+  try {
+    assert.equal(
+      (await call("POST", "/v2/private/session/revoke", {}, ctx)).status,
+      503,
+    );
+  } finally {
+    authority.issuerPool = original;
+  }
+  assert.equal(lost, true);
+  const before = (
+    await db.admin.query(
+      "SELECT * FROM vault_private_sessions WHERE session_ref_hash=$1",
+      [ctx.sessionRef],
+    )
+  ).rows[0];
+  assert.ok(before.revoked_at);
+  await assert.rejects(
+    () => engine.tx((client) => engine.authorize(client, f.p, "review")),
+    (e) => e.status === 401,
+  );
+  const results = await Promise.all([
+    call("POST", "/v2/private/session/revoke", {}, ctx),
+    call("POST", "/v2/private/session/revoke", {}, ctx),
+  ]);
+  assert.deepEqual(
+    results.map((r) => r.status),
+    [200, 200],
+  );
+  const after = (
+    await db.admin.query(
+      "SELECT * FROM vault_private_sessions WHERE session_ref_hash=$1",
+      [ctx.sessionRef],
+    )
+  ).rows[0];
+  assert.equal(after.consent_epoch, before.consent_epoch);
+  assert.equal(
+    new Date(after.revoked_at).getTime(),
+    new Date(before.revoked_at).getTime(),
+  );
+});
+test("real owner logout drains an in-flight decision across Redis, pinned mTLS and SQL before returning success", async () => {
+  const { ownerController } = await import("../../lib/auth/owner-core.ts");
+  const { ownerAccess } = await import("../../lib/auth/owner-access.ts");
+  const { revokeSessionWith } =
+    await import("../../lib/brain/private/connection.ts");
+  const {
+    config: baseConfig,
+    origin,
+    memoryStore,
+    provider: baseProvider,
+    login,
+    request: authRequest,
+  } = await import("../helpers/owner-fixture.mjs");
+  const config = { ...baseConfig, ownerSub: "987654321" + Date.now() },
+    store = memoryStore();
+  const provider = {
+    ...baseProvider,
+    async exchange() {
+      return { sub: config.ownerSub, email_verified: true };
+    },
+  };
+  const pid = randomUUID(),
+    oid = "synthetic-coordinated-logout-" + randomUUID(),
+    identity = { principalId: pid, ownerId: oid };
+  await db.admin.query(
+    "INSERT INTO vault_principals(principal_id,owner_id,display_name,kind,role,scopes,token_hash) VALUES($1,$2,'SYNTH coordinated logout','owner','owner',ARRAY['read','propose','review','delete','export'],$3)",
+    [pid, oid, hash(randomUUID())],
+  );
+  await db.admin.query("INSERT INTO vault_owner_identities VALUES($1,$2)", [
+    hash(config.ownerSub),
+    pid,
+  ]);
+  const controller = ownerController({
+    config,
+    store,
+    provider,
+    revokeOwnerSession: (session) =>
+      revokeSessionWith(transport, identity, session),
+  });
+  const signed = await login(controller),
+    access = ownerAccess(config, store);
+  const auth = await access.read(
+    authRequest("session", "GET", { cookie: signed.cookie }),
+  );
+  const previous = authority.verifyOnline;
+  authority.verifyOnline = (value) => access.verifyFamily(value);
+  const ctx = {
+    ...identity,
+    sessionRef: auth.sessionRef,
+    identityHash: auth.identityHash,
+    sessionExpiresAt: Math.floor(auth.expiresAt / 1000),
+    principalEpoch: 0,
+    consentEpoch: 0,
+  };
+  try {
+    assert.equal(
+      (await call("POST", "/v2/private/consent", { granted: true }, ctx))
+        .status,
+      200,
+    );
+    const current = (await call("GET", "/v2/private/session", undefined, ctx))
+      .body.data;
+    const cached = {
+      principalId: pid,
+      ownerId: oid,
+      credentialHash: (
+        await db.admin.query(
+          "SELECT token_hash FROM vault_principals WHERE principal_id=$1",
+          [pid],
+        )
+      ).rows[0].token_hash.trim(),
+      permissionEpoch: current.principalEpoch,
+      authorization: {
+        sessionRef: auth.sessionRef,
+        identityHash: auth.identityHash,
+        principalEpoch: current.principalEpoch,
+        consentEpoch: current.consentEpoch,
+      },
+    };
+    const proposed = await engine.submit(
+      cached,
+      {
+        note: {
+          ...note(),
+          evidence: [{ kind: "manual", reason: "SYNTH real logout race" }],
+        },
+      },
+      randomUUID(),
+    );
+    const row = (
+      await db.admin.query(
+        "SELECT payload_hash FROM vault_proposals WHERE proposal_id=$1",
+        [proposed.proposalId],
+      )
+    ).rows[0];
+    const c = (
+      await call(
+        "POST",
+        "/v2/private/review-challenges",
+        {
+          subjectId: proposed.proposalId,
+          expectedRevision: 0,
+          decision: "verify",
+          intentSha256: row.payload_hash.trim(),
+        },
+        current,
+      )
+    ).body.data;
+    assert.ok(c.challengeId);
+    assert.equal(
+      (
+        await call(
+          "POST",
+          "/v2/private/review-challenges/" + c.challengeId + "/fresh",
+          {
+            identityHash: auth.identityHash,
+            authTime: Math.floor(Date.now() / 1000),
+          },
+          current,
+        )
+      ).status,
+      200,
+    );
+    const original = authority.issuerPool,
+      barrier = transactionBarrier(
+        original,
+        (sql) => sql.includes("SET consumed_at="),
+        { beforeCommit: true },
+      );
+    authority.issuerPool = barrier.pool;
+    const completion = call(
+      "POST",
+      "/v2/private/review-challenges/" + c.challengeId + "/complete",
+      {},
+      current,
+    );
+    let logoutPending,
+      finished = false;
+    try {
+      await barrier.entered;
+      logoutPending = controller
+        .logout(
+          authRequest("logout", "POST", {
+            cookie: signed.cookie,
+            origin,
+            "x-ncore-csrf": signed.body.csrf,
+          }),
+        )
+        .then((r) => {
+          finished = true;
+          return r;
+        });
+      await assertSessionWaiter();
+      assert.equal(finished, false);
+      assert.ok(await access.verifyFamily(auth));
+    } finally {
+      barrier.release();
+      authority.issuerPool = original;
+    }
+    const decision = await completion;
+    assert.ok(
+      [200, 401].includes(decision.status),
+      JSON.stringify(decision.body),
+    );
+    if (decision.status === 401)
+      assert.equal(decision.body.error, "NO_OWNER_SESSION");
+    const logout = await logoutPending;
+    assert.equal(logout.status, 200, await logout.clone().text());
+    assert.equal(await access.verifyFamily(auth), null);
+    assert.ok(
+      (
+        await db.admin.query(
+          "SELECT revoked_at FROM vault_private_sessions WHERE session_ref_hash=$1",
+          [auth.sessionRef],
+        )
+      ).rows[0].revoked_at,
+    );
+    assert.equal(
+      (
+        await db.admin.query(
+          "SELECT count(*)::int AS n FROM vault_revisions WHERE note_id=$1",
+          [proposed.noteId],
+        )
+      ).rows[0].n,
+      1,
+    );
+    await assert.rejects(
+      () => engine.tx((client) => engine.authorize(client, cached, "review")),
+      (e) => e.status === 401,
+    );
+    assert.equal(
+      (await call("GET", "/v2/private/session", undefined, ctx)).status,
+      401,
+    );
+  } finally {
+    authority.verifyOnline = previous;
+  }
+});

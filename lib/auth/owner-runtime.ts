@@ -53,5 +53,8 @@ export function loadOwnerServices() {
 }
 
 export async function loadOwnerController(report?:(event:AuthEvent)=>void){
- const services=loadOwnerServices();return services?ownerController({...services,report}):null;
+ const services=loadOwnerServices();
+ if(!services)return null;
+ const {privateRevocationRequired,revokePrivateOwnerSession}=await import('../brain/private/connection.ts');
+ return ownerController({...services,report,...(privateRevocationRequired()?{revokeOwnerSession:revokePrivateOwnerSession}:{})});
 }

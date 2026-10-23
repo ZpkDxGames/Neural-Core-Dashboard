@@ -1,0 +1,11 @@
+# Phase 3.2 regression protocol
+
+Baseline: 332 passing cases on `108b6357cc8778d570657ebf569c2de0043b1f4e`, including 141 original browser cases and 5 private browser cases. This candidate retains every original case and appends 20 security/reliability cases: 6 owner/transport contracts and 14 private SQL/mTLS integration cases. Expected complete count: **352**; use the delivered exact-head CI artifact and certification for actual results, not this expected count.
+
+Added cases cover raw-Redis/precommit race control; revocation before authorization; missing owner session context; execution and precommit contention; fence-first denial; postcommit semantics; credential retry/cleanup; missing-family tombstones; duplicate/JTI replay/binding; 006 ACL/rollback/checksum/monotonicity; genuine deferred revocation COMMIT failure; lost SQL acknowledgment/concurrent retries; owner rotation/relogin/CSRF/origin/outage behavior; and the actual in-flight logout → mTLS → SQL → primary-family-retirement journey.
+
+Native CI uses disposable PostgreSQL 16 with separate administrator, API and issuer logins, plus Redis 7.4. Native revocation tests observe a real independent SQL session waiting on the held authorization lock before releasing it. Local PGlite serializes clients and therefore supplies SQL/rollback checks only. The local real-Redis test is unavailable without the disposable service; CI must run it without skips.
+
+Required commands remain the full root/backend/V2/private/Brain suites, native PostgreSQL integrations, TypeScript, production build, lint/parity, both Playwright suites, root/backend locked advisory audits, browser credential exclusion and default-off route smoke. CI retains raw logs and Playwright JSON under the existing evidence paths. `verify-phase31-regressions.mjs` independently checks baseline test file bytes and the complete unchanged original integration-test prefix before the suites run.
+
+The delivered `FINAL_CERTIFICATION.md`, `ACTUAL_TEST_RESULTS.json`, GitHub run/job/artifact metadata and raw job logs identify actual final outcomes, commit/tree, run attempt and artifact digest. Historical Phase 3/3.1 reports are not current certification. No real staging behavior or production service is tested.

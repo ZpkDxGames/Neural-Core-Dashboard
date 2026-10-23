@@ -126,6 +126,22 @@ export function makePrivateGatewayHandler({
         const path = target.split("?")[0],
           bootstrap =
             path === "/v2/private/session" || path === "/v2/private/consent";
+        if (path === "/v2/private/session/revoke" && method === "POST") {
+          action = "owner-session-revoke";
+          query(target, []);
+          fields(strictJSON(bytes), []);
+          // Revocation must remain idempotent after the SQL tombstone exists;
+          // ordinary resolve() deliberately refuses that session thereafter.
+          const data = await authority.revokeSession(claims);
+          await authority.online(claims);
+          if (!allowedClientThumbprints.has(thumbprint))
+            fail("CLIENT_IDENTITY_REJECTED", 401);
+          return send(res, 200, {
+            schemaVersion: 3,
+            confirmedAt: new Date(clock()).toISOString(),
+            data,
+          });
+        }
         const p = await authority.resolve(claims, { bootstrap });
         const input = method === "POST" ? strictJSON(bytes) : null;
         let data;
@@ -217,7 +233,8 @@ export function makePrivateGatewayHandler({
             data = await authority.complete(p, m[1]);
           } else fail("METHOD_NOT_ALLOWED", 405);
         }
-        // Recheck the primary session store after work and before any response bytes.
+        // Response-time admission check, not a cross-system transaction fence.
+        // Coordinated logout obtains the exclusive SQL session lock before Redis deletion.
         await authority.online(claims);
         if (!allowedClientThumbprints.has(thumbprint))
           fail("CLIENT_IDENTITY_REJECTED", 401);

@@ -12,9 +12,10 @@ export type OwnerConfig = {
 export type Flow = { binding: string; nonce: string; verifier: string; state: string; expiresAt: number };
 export type Identity = { sub?: unknown; email_verified?: unknown; email?: unknown; auth_time?: unknown };
 export type Session = { sub: string; expiresAt: number; issuedAt: number; family: string };
+export type OwnerSessionRevocation = { sessionRef: string; identityHash: string; expiresAt: number };
 type Family = { sub: string; expiresAt: number };
 export type AuthEvent = 'AUTH_STORAGE_UNAVAILABLE' | 'GOOGLE_PROVIDER_UNAVAILABLE' |
-  'GOOGLE_EXCHANGE_REJECTED' | 'CALLBACK_REJECTED' | 'ACCOUNT_REJECTED' | 'LOGIN_RATE_LIMITED';
+  'GOOGLE_EXCHANGE_REJECTED' | 'CALLBACK_REJECTED' | 'ACCOUNT_REJECTED' | 'LOGIN_RATE_LIMITED' | 'AUTH_REVOCATION_UNAVAILABLE';
 export class AuthDependencyError extends Error {
   readonly code: AuthEvent;
   constructor(code: AuthEvent) { super(code); this.code=code; this.name='AuthDependencyError'; }
@@ -163,8 +164,9 @@ export async function readAuthorizedOwnerSession(req:Request,config:OwnerConfig,
 
 }
 
-export function ownerController({config, store, provider, clock = Date.now, report = ()=>{}}: {
-  config:OwnerConfig; store:Store; provider:OidcProvider; clock?:()=>number; report?:(event:AuthEvent)=>void
+export function ownerController({config, store, provider, clock = Date.now, report = ()=>{}, revokeOwnerSession}: {
+  config:OwnerConfig; store:Store; provider:OidcProvider; clock?:()=>number; report?:(event:AuthEvent)=>void;
+  revokeOwnerSession?:(session:OwnerSessionRevocation)=>Promise<void>
 }) {
   const prefix = PREFIX + digest(config.origin+'|'+config.clientId+'|'+config.ownerSub) + ':';
   const key = (category:string,token:string) => prefix+category+':'+digest(token);
@@ -173,9 +175,17 @@ export function ownerController({config, store, provider, clock = Date.now, repo
   const unavailable = (error:unknown, cookies:string[]=[]) => {
     const event=error instanceof AuthDependencyError ? error.code : 'AUTH_STORAGE_UNAVAILABLE';
     report(event);
-    return result(503,{error:'AUTH_UNAVAILABLE',reason:event==='AUTH_STORAGE_UNAVAILABLE'?'storage':'provider'},cookies);
+    return result(503,{error:'AUTH_UNAVAILABLE',reason:event==='AUTH_REVOCATION_UNAVAILABLE'?'revocation':event==='AUTH_STORAGE_UNAVAILABLE'?'storage':'provider'},cookies);
   };
   const authorizedSession = (req:Request) => readAuthorizedOwnerSession(req,config,store,clock);
+  const retireSession = async (saved:Session) => {
+    // Success means the private SQL fence committed before primary-family deletion.
+    // Leave Redis available for a retry if SQL or its acknowledgment is unavailable.
+    if(revokeOwnerSession)try {
+      await revokeOwnerSession({sessionRef:digest(saved.family),identityHash:digest(saved.sub),expiresAt:saved.expiresAt});
+    }catch {throw new AuthDependencyError('AUTH_REVOCATION_UNAVAILABLE');}
+    await store.remove(key('family',saved.family));
+  };
   const requireCsrf = (req:Request, token:string): boolean => exactOrigin(req,config.origin) &&
       safeEqual(req.headers.get('x-ncore-csrf'),csrfToken(config.csrfSecret,token));
   return {
@@ -217,6 +227,8 @@ export function ownerController({config, store, provider, clock = Date.now, repo
           return redirect(config.origin+'/?auth=failed',CLEAR_FLOW);
         const identity=await provider.exchange({state,nonce:flow.nonce,verifier:flow.verifier,redirectUri:callback,currentUrl:url.toString()});
         if(!ownerAllowed(identity,config.ownerSub)){report('ACCOUNT_REJECTED');return redirect(config.origin+'/?auth=denied',CLEAR_FLOW);}
+        const old=await authorizedSession(req);
+        if(old)await retireSession(old.saved);
         const token=random(), family=random(), now=clock(), expiresAt=now+SESSION_TTL*1000;
         // Family is created once at login. Rotation never recreates it, so a concurrent
         // logout also revokes a replacement token which has not yet been delivered.
@@ -224,8 +236,6 @@ export function ownerController({config, store, provider, clock = Date.now, repo
           throw new AuthDependencyError('AUTH_STORAGE_UNAVAILABLE');
         if(!await store.create(key('session',token),{sub:config.ownerSub,issuedAt:now,expiresAt,family},SESSION_TTL))
           throw new AuthDependencyError('AUTH_STORAGE_UNAVAILABLE');
-        const prior=parsedCookie(req,SESSION_COOKIE);
-        if(prior){const old=await store.get<Session>(key('session',prior));if(old?.family)await store.remove(key('family',old.family));}
         const headers=noStore();headers.set('Location',config.origin+'/?auth=signed-in');
         headers.append('Set-Cookie',CLEAR_FLOW);
         headers.append('Set-Cookie',cookieHeader(SESSION_COOKIE,token,SESSION_TTL));
@@ -233,7 +243,7 @@ export function ownerController({config, store, provider, clock = Date.now, repo
       }catch(error){
         const event=error instanceof AuthDependencyError?error.code:'GOOGLE_EXCHANGE_REJECTED';
         report(event);
-        return redirect(config.origin+'/?auth='+(event==='AUTH_STORAGE_UNAVAILABLE'||event==='GOOGLE_PROVIDER_UNAVAILABLE'?'unavailable':'failed'),CLEAR_FLOW);
+        return redirect(config.origin+'/?auth='+(event==='AUTH_STORAGE_UNAVAILABLE'||event==='GOOGLE_PROVIDER_UNAVAILABLE'||event==='AUTH_REVOCATION_UNAVAILABLE'?'unavailable':'failed'),CLEAR_FLOW);
       }
     },
     async session(req:Request):Promise<Response> {
@@ -255,7 +265,7 @@ export function ownerController({config, store, provider, clock = Date.now, repo
         const record=await authorizedSession(req);
         if(!record)return result(401,{error:'UNAUTHORIZED'});
         if(!requireCsrf(req,record.token))return result(403,{error:'CSRF_DENIED'});
-        await store.remove(key('family',record.saved.family));
+        await retireSession(record.saved);
         return result(200,{loggedOut:true},[CLEAR_SESSION]);
       }catch(error){return unavailable(error);}
     },

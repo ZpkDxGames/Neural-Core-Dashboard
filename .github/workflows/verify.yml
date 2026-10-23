@@ -50,10 +50,11 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ncore_phase1b_invalid_test OWNER postgres;"
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_invalid_test -v ON_ERROR_STOP=1 -f db/001_init.sql
           psql -h 127.0.0.1 -U postgres -d ncore_phase1b_invalid_test -v ON_ERROR_STOP=1 -c "INSERT INTO conversations(id,source_id,title) VALUES('chatgpt:invalid-fixture','chatgpt','Synthetic invalid'); INSERT INTO memory_nodes(id,node_type,label) VALUES('synthetic-node','fact','Synthetic'); INSERT INTO memory_evidence(node_id,conversation_id,message_id) VALUES('synthetic-node','chatgpt:invalid-fixture','does-not-exist');"
-      - name: Retain complete Phase 3.1 unit and backend evidence
+      - name: Preserve all Phase 3.1 regressions and retain complete test evidence
         run: |
           mkdir -p docs/phase31/evidence
           set -o pipefail
+          node scripts/verify-phase31-regressions.mjs docs/phase31/evidence/phase31-preservation.json
           npm test | tee docs/phase31/evidence/unit.log
       - run: node --test backend/*.test.mjs | tee docs/phase31/evidence/backend.log
       - name: Vault V2 unit, filesystem, API and privacy contracts

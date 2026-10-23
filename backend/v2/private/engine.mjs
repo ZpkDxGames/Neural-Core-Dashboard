@@ -36,6 +36,8 @@ export class PrivateMemoryEngine extends MemoryEngine {
         identity.permissionEpoch !== row.permission_epoch)
     )
       fail("UNAUTHORIZED", 401);
+    if (row.kind === "owner" && !identity.authorization)
+      fail("NO_OWNER_SESSION", 401);
     const p = await super.authorize(db, identity, scope);
     if (identity.authorization) {
       const a = identity.authorization,
@@ -49,9 +51,12 @@ export class PrivateMemoryEngine extends MemoryEngine {
         !s ||
         s.principal_id !== p.principalId ||
         s.revoked_at ||
-        !s.consented ||
         new Date(s.expires_at) <= new Date() ||
-        s.identity_hash.trim() !== a.identityHash ||
+        s.identity_hash.trim() !== a.identityHash
+      )
+        fail("NO_OWNER_SESSION", 401);
+      if (
+        !s.consented ||
         s.consent_epoch !== a.consentEpoch ||
         row.permission_epoch !== a.principalEpoch
       )

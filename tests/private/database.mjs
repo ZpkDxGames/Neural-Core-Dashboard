@@ -4,6 +4,7 @@ import { applyMigration } from "../../backend/migrate.mjs";
 import { applyVaultMigration } from "../../backend/v2/migrate.mjs";
 import { applyPrivateMigration } from "../../backend/v2/private/migrate.mjs";
 import { applyDeliveryMigration } from "../../backend/v2/private/delivery-migrate.mjs";
+import { applySessionMigration } from "../../backend/v2/private/session-migrate.mjs";
 export async function privateDatabase() {
   let admin, pool, issuerPool, close, runtime;
   if (process.env.NCORE_V2_PGLITE_PACKAGE) {
@@ -142,6 +143,29 @@ export async function privateDatabase() {
   )
     throw Error("Migration 005 did not roll back");
   await applyDeliveryMigration(admin);
+  let sessionRolledBack = false;
+  try {
+    await applySessionMigration({
+      query(sql, args) {
+        if (sql.startsWith("INSERT INTO schema_migrations"))
+          throw Error("SYNTHETIC_SESSION_LEDGER_FAILURE");
+        return admin.query(sql, args);
+      },
+    });
+  } catch (e) {
+    if (e.message !== "SYNTHETIC_SESSION_LEDGER_FAILURE") throw e;
+    sessionRolledBack = true;
+  }
+  if (
+    !sessionRolledBack ||
+    (
+      await admin.query(
+        "SELECT 1 FROM pg_trigger WHERE tgname='vault_session_fence'",
+      )
+    ).rows.length
+  )
+    throw Error("Migration 006 did not roll back");
+  await applySessionMigration(admin);
   if (!process.env.NCORE_V2_PGLITE_PACKAGE)
     await admin.query(
       "ALTER ROLE neuralcore_issuer LOGIN PASSWORD 'synthetic-issuer-role'",

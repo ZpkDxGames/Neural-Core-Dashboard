@@ -1,5 +1,7 @@
 # Phase 3.1 — credential delivery and assertion hardening
 
+Phase 3.2 supersedes owner-session revocation ordering with an explicit [SQL commit fence](../phase32/ARCHITECTURE.md) and migration 006. The credential-delivery and assertion protections below remain in force.
+
 Source-only development on draft PR #9. No activation, merge, deployment, live migration or credential operation is authorized. Phase 3 remains the integration architecture; this document supersedes its sink/transaction ordering and adds explicit migration 005.
 
 ## Recoverable credential delivery

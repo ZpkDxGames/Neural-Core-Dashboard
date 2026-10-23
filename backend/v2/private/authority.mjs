@@ -180,6 +180,62 @@ export class PrivateAuthority {
       sessionExpiresAt: claims.session_expires_at,
     };
   }
+  /** SQL commit fence, then the caller retires the primary Redis family.
+   * Existing shared session locks drain before this transaction can commit.
+   * An uncertain acknowledgment is retried with the same immutable family. */
+  async revokeSession(claims) {
+    await this.online(claims);
+    if (claims.principal_epoch !== 0 || claims.consent_epoch !== 0)
+      fail("INVALID_BOOTSTRAP", 403);
+    return this.tx(async (db) => {
+      await db.query("SELECT vault_lock_authorization($1,NULL)", [claims.sub]);
+      const owner = (
+        await db.query(
+          `SELECT p.* FROM vault_principals p JOIN vault_owner_identities i ON i.principal_id=p.principal_id
+         WHERE i.identity_hash=$1 AND p.principal_id=$2 AND p.owner_id=$3 AND p.kind='owner' AND p.role='owner' AND p.disabled_at IS NULL`,
+          [claims.identity_hash, claims.sub, claims.owner],
+        )
+      ).rows[0];
+      if (
+        !owner ||
+        (owner.credential_expires_at &&
+          new Date(owner.credential_expires_at) <= new Date(this.clock()))
+      )
+        fail("UNAUTHORIZED", 401);
+      // A tombstone is required even if this family has not bootstrapped yet.
+      // Concurrent bootstrap cannot recreate or revive it after the unique insert.
+      await db.query(
+        `INSERT INTO vault_private_sessions(session_ref_hash,principal_id,identity_hash,expires_at)
+         VALUES($1,$2,$3,to_timestamp($4)) ON CONFLICT(session_ref_hash) DO NOTHING`,
+        [
+          claims.session_ref,
+          claims.sub,
+          claims.identity_hash,
+          claims.session_expires_at,
+        ],
+      );
+      const s = (
+        await db.query(
+          "SELECT * FROM vault_private_sessions WHERE session_ref_hash=$1 FOR UPDATE",
+          [claims.session_ref],
+        )
+      ).rows[0];
+      if (
+        !s ||
+        s.principal_id !== claims.sub ||
+        s.identity_hash.trim() !== claims.identity_hash ||
+        Math.floor(new Date(s.expires_at).getTime() / 1000) !==
+          claims.session_expires_at
+      )
+        fail("NO_OWNER_SESSION", 401);
+      await db.query(
+        `UPDATE vault_private_sessions SET revoked_at=clock_timestamp(),consented=false,consent_epoch=consent_epoch+1
+         WHERE session_ref_hash=$1 AND revoked_at IS NULL`,
+        [claims.session_ref],
+      );
+      return { revoked: true, sessionRef: claims.session_ref };
+    });
+  }
   context(p) {
     return {
       principalId: p.principalId,
